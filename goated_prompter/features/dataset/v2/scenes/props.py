@@ -17,10 +17,17 @@ place already names an object of a group (a brush in a painter's hand, a bench s
 only that object, described more closely (the_same_things: a fine sable brush, a weathered park bench), never another
 of its kind next to it (a second brush, another seat). A group's objects can be far apart (tools of one trade and of
 another world), so only its entries at least as close to the image as the group's average are dealt (closest).
+
+Without a selected Objects & Props pack, the built-in packs only give the things the request itself asks for, by their
+whole name, as "needed" in every image (named_things, deal_named): never an optional or decorative object, and a thing
+no built-in entry names keeps the request's own words.
 """
+
+import re
 
 from ....vocabulary.retrieval import content_words, entry_name, fit_scores, relevance, word_stem, zscores
 from ....vocabulary.selection import deal_spread
+from .entries import named_in
 
 OBJECTS = "Objects & Props"
 # A group this many deviations closer to an image's pose and place than the other groups suits it: poses that use
@@ -79,6 +86,38 @@ def with_needed(scene, needed):
     if not missing:
         return scene
     return {**scene, "extras": "; ".join([str(scene.get("extras") or "").rstrip("; ."), *missing]).strip("; ")}
+
+
+PHRASES = re.compile(r"[;,]|\b(?:and|while|with)\b")
+
+
+def named_things(groups, kept="", acts=(), place=""):
+    """[[entries]]: the objects the request asks for that the built-in packs (groups) name, each as the entries of one
+    name. A thing is named by its whole name, in any form and order (entries.named_in: "a red lantern" names the
+    lantern; "a small paper kite" names no paper lantern), within one phrase of Understanding's kept objects (kept) or
+    of one act (acts: an act names the things it is done with even when the kept objects leave them out, "plays
+    guitar"), so words of two phrases never make a name together. An act's thing the place's own words name too
+    (place) is where the act happens, not a thing in it ("hiking a snowy mountain trail"); the kept objects always
+    count. [] when nothing is named: the request's own words stay as they are."""
+    entries = list(dict.fromkeys(entry for group in groups for entry in group["entries"]))
+    placed = {word_stem(word) for word in content_words(place)}
+    name = lambda entry: " ".join(entry.split(": ", 1)[0].casefold().split())
+    found, seen = {}, set()
+    phrases = [(phrase, False) for phrase in PHRASES.split(str(kept or ""))] + [
+        (phrase, True) for act in acts for phrase in PHRASES.split(str(act or ""))]
+    for phrase, in_act in phrases:
+        for entry in named_in(entries, content_words(phrase)):
+            stems = {word_stem(word) for word in content_words(name(entry))}
+            if entry not in seen and not (in_act and stems <= placed):
+                seen.add(entry)
+                found.setdefault(name(entry), []).append(entry)
+    return list(found.values())
+
+
+def deal_named(things, total):
+    """{slot: [entries]}: every named thing in every image, the entries of one name taken in turn (no random call)."""
+    return {number: [entries[(number - 1) % len(entries)] for entries in things]
+            for number in range(1, total + 1)} if things else {}
 
 
 def deal_props(groups, total, rng, partners=None, embeddings=None):

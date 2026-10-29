@@ -275,7 +275,11 @@ request. An entry is a whole interaction with its people as letters, kept as wri
 names them too; a quote that names no catalog object, such as an activity, needs nothing) are needed in every image: their entries go to each image as `needed`, shown as the request
 uses them, and code adds one a scene leaves out to its extras (`with_needed`: only those catalog entries, never the kept words
 themselves). No other word of the request names an
-object (a game the act names is no game board: `deal_hands` with `own_words`). Otherwise every image is suggested one
+object (a game the act names is no game board: `deal_hands` with `own_words`). Without a selected Objects & Props
+pack, the built-in Objects packs give only the things the request names by their whole name, in a phrase of the kept
+objects or of one of Understanding's acts (an act's thing the place's own words name is the place), as `needed` in every
+image (`named_things`, `deal_named`: no random call, never an optional object), and the writer gets `NEEDED_RULES`; a
+thing no built-in entry names keeps the request's words. With a selected pack, otherwise every image is suggested one
 optional object from the groups that clearly suit its own dealt pose, the request's act and its place (`suiting`,
 `SUIT_Z`: a group judged by its name and words, which say what its objects are for); a group whose object the image
 already names offers only that object, described more closely (`the_same_things`: the painter's brush, the bench

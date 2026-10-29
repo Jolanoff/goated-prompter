@@ -30,6 +30,8 @@ request) are needed in every image, in the vocabulary's words ("needed"); otherw
 optional object from the groups that suit its own dealt pose (or the request's act) and place (none when nothing
 does). A needed thing is shown as the request uses it; an optional one only on a body part or support the act leaves
 free, or in the space. Every image's pose, place, object and people (looks.py) are dealt together, so they make one scene.
+Without a selected Objects & Props pack, the built-in packs only give the things the request names (its kept objects
+and its acts) as needed in every image, never an optional one.
 
 Cameras (camera.py): every image is dealt one whole camera (shot, angle and view) that suits its dealt pose, the image
 shape and what the request asks to show, keeping the request's own camera words; a known character's frame is the

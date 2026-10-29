@@ -20,7 +20,7 @@ from .settings import (ADULT_SUBJECT_FIELDS, FACES, FIELDS, KNOWN_SUBJECT_FIELDS
                        SHOWS, SUBJECT_FIELDS)
 from .texts import (ARRANGEMENT_RULE, ASPECT_RULE, CAMERA_RULE, COMPOSE_SYSTEM, CONSISTENCY_RULE, DEALT_FRAME_RULE,
                     COMPOSED_RULE, DETAILS_RULE, ENTRY_RULE, FRAME_RULE, GUIDED_RULE, LABELS_RULE, LOOK_RULE, NO_COLOR_RULE,
-                    NO_PEOPLE_RULE, NSFW_RULE, PLACE_RULE, SFW_RULE, VOCABULARY_RULES)
+                    NEEDED_RULES, NO_PEOPLE_RULE, NSFW_RULE, PLACE_RULE, SFW_RULE, VOCABULARY_RULES)
 
 # Where an earlier image's summary (checks._summary) holds each part: a locked part's first version is copied from it,
 # and already_used never lists a locked part as something to avoid.
@@ -103,7 +103,7 @@ def director_emphasis(brief):
 
 
 def _system(brief, errors, vocabulary="", entry_cap=None, places=False, looks=False, details=False, cameras=False,
-            frames=False, arranged=False, composed=False):
+            frames=False, arranged=False, composed=False, needed=False):
     content = NSFW_RULE if brief["path"] == "nsfw_character" else SFW_RULE
     if not brief["characters"]:
         content += "\n" + NO_PEOPLE_RULE
@@ -112,6 +112,8 @@ def _system(brief, errors, vocabulary="", entry_cap=None, places=False, looks=Fa
     system = COMPOSE_SYSTEM.format(content_rule=content, show=SHOW_DONT_TELL)
     if vocabulary:
         system += "\n\n" + VOCABULARY_RULES
+    elif needed:  # things the built-in packs name, without a selected pack
+        system += "\n\n" + NEEDED_RULES
     if entry_cap:
         system += "\n\n" + (COMPOSED_RULE if composed else ENTRY_RULE).format(cap=entry_cap)
     if places:
@@ -218,7 +220,8 @@ def compose_instruction(brief, images, earlier=(), errors=(), vocabulary="", ent
                                                     any("camera" in image for image in images),
                                                     any("frame" in image for image in images),
                                                     any("arrangement" in image for image in images),
-                                                    any("acts" in image for image in images)),
+                                                    any("acts" in image for image in images),
+                                                    any("needed" in image for image in images)),
                              user_message=compose_message(brief, images, earlier, vocabulary, entries_used),
                              model_family=brief["_family"], diagnostic_stage="dataset_v2:scenes",
                              max_tokens=per_image * count, hard_max_tokens=per_image * count,

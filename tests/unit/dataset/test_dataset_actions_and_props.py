@@ -273,6 +273,24 @@ class Props(unittest.TestCase):
         kept = props.closest([group], "a painter holding a brush", self.meaning)
         self.assertTrue(kept[0]["entries"] and len(kept[0]["entries"]) <= 3)
 
+    def test_built_in_packs_name_only_the_things_the_request_asks_for(self):
+        rows = [{"name": "things", "words": [], "entries": ["chess board", "wooden table", "lighthouse", "umbrella",
+                                                            "lantern: brass", "lantern: paper"]}]
+        self.assertEqual(props.named_things(rows, "", ["playing chess on a chess board"]), [["chess board"]],
+                         "an act names the thing it is done with")
+        self.assertEqual(props.named_things(rows, "chess pieces; a board", ["reading"]), [],
+                         "words of two phrases never make one name")
+        self.assertEqual(props.named_things(rows, "", ["reading in a lighthouse"], place="a lighthouse"), [],
+                         "the place, not a thing in it")
+        self.assertEqual(props.named_things(rows, "a lighthouse", [], place="a lighthouse"), [["lighthouse"]],
+                         "a kept object always counts")
+        things = props.named_things(rows, "a red umbrella; a lantern", ["holding a lantern"])
+        self.assertEqual(things, [["umbrella"], ["lantern: brass", "lantern: paper"]], "each thing once")
+        self.assertEqual(props.deal_named(things, 3), {1: ["umbrella", "lantern: brass"], 2: ["umbrella", "lantern: paper"],
+                                                       3: ["umbrella", "lantern: brass"]},
+                         "every thing in every image, entries of one name in turn")
+        self.assertEqual(props.deal_named([], 3), {})
+
     def test_an_image_nothing_suits_gets_no_object(self):
         # A slow dance and a hug were suggested a spear and a buckler when every image got an object.
         rows = groups(*self.OBJECTS, category="Objects & Props")

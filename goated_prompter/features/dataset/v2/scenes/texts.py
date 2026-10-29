@@ -88,6 +88,11 @@ Rules:
 Return one JSON object: {{"scenes": [ ... ]}}, one per image, in order.""")
 
 
+# How an image's "needed" entries are used: part of VOCABULARY_RULES, and sent on its own (NEEDED_RULES) when the
+# built-in packs name a thing the request asks for and no pack is selected.
+NEEDED_RULE = """- An image may list "needed" entries per category: the things the request itself names, in the vocabulary's words.
+  Show each one in that image as the request uses it (held, used, worn or placed as it says)."""
+
 VOCABULARY_RULES = """VOCABULARY
 The user selected these vocabulary packs: they must visibly shape the images, and the request always comes first.
 - Each selected category shapes its part of the scene: Subjects the people (never a known character's looks), Actions
@@ -97,8 +102,7 @@ The user selected these vocabulary packs: they must visibly shape the images, an
   are chosen freely.
 - Entries of every other category are possibilities: adapt them to the scene, vary within their themes across the
   images, and choose from any pack of a category.
-- An image may list "needed" entries per category: the things the request itself names, in the vocabulary's words.
-  Show each one in that image as the request uses it (held, used, worn or placed as it says).
+""" + NEEDED_RULE + """
 - An image may list "suggested" entries per category: they are optional: use at most one per category, and only one
   the image can show with its pose: a hand, mouth or body part the act or a needed thing uses cannot also hold or wear
   it, and the pose never changes to make room for it; when the act's hands are busy, an object only stands in the
@@ -110,6 +114,11 @@ The user selected these vocabulary packs: they must visibly shape the images, an
   mark or sign is on a part the camera sees. When it cannot agree, leave it out.
 - A pack may come with its author's note: what its entries are for and how they are written. It never overrides the
   request, these rules or the settings."""
+
+NEEDED_RULES = """NEEDED THINGS
+""" + NEEDED_RULE + """
+- A needed entry only names a thing the request asks for: everything the request says of it (its colour, material,
+  number, owner and use) still holds, and nothing else is added for it."""
 
 
 # The NSFW switch only allows adult content; the request decides what each image shows.

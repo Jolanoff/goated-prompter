@@ -24,8 +24,12 @@ def brief(**data):
                                              "amount": 4, "seed": 3, "seed_mode": "fixed", **data})
 
 
-def plan(packs=(), guided=False, **data):
+def plan(packs=(), guided=False, kept=None, acts=None, **data):
     run = {**brief(**data), "_known": frozenset()}  # as write_scenes passes it
+    if kept is not None:
+        run["kept_words"] = {**run.get("kept_words", {}), **kept}
+    if acts is not None:
+        run["acts"] = acts
     selection = {"packs": list(packs)}
     return policies.plan_vocabulary(run, CATALOG, selection, selected_vocabulary(CATALOG, selection), None,
                                     random.Random(3), guided)
@@ -47,14 +51,18 @@ class Registry(unittest.TestCase):
                 expected = ("action",) if policy.category == ACTIONS_CATEGORY else parts[policy.category]
                 self.assertEqual(policy.understanding_fields, expected)
 
-    def test_built_in_packs_are_used_only_where_every_image_is_dealt_one(self):
+    def test_built_in_packs_are_used_only_where_every_image_is_dealt_one_or_a_thing_is_named(self):
         self.assertEqual({policy.category for policy in policies.POLICIES if policy.always_available},
-                         {"Spaces", "Subjects", "Camera & Composition"})
+                         {"Spaces", "Subjects", "Camera & Composition", "Objects & Props"})
         run = {"catalog": CATALOG, "selection": {"packs": []}, "groups": [], "guided": False}
         for policy in policies.POLICIES:
             with self.subTest(category=policy.category):
                 found = policies.retrieve(policy, run)
                 self.assertEqual(bool(found), policy.always_available, "no other category retrieves built-in entries")
+        selected = {**run, "selection": {"packs": ["Objects/Furniture"]}}
+        self.assertEqual({row["name"] for row in policies.retrieve(policies.POLICY["Objects & Props"], selected)},
+                         {group["name"] for pack in CATALOG["packs"] if pack["id"] == "Objects/Furniture"
+                          for group in pack["groups"]}, "a selected pack comes instead of the built-in ones")
 
 
 class Engine(unittest.TestCase):
@@ -72,6 +80,19 @@ class Engine(unittest.TestCase):
         self.assertEqual(outcome["Lighting"], "suggested")
         self.assertEqual(outcome["Mood & Tone"], "suggested")
         self.assertTrue(all({"Lighting", "Mood & Tone"} <= set(hand) for hand in result["hands"].values()))
+
+    def test_a_thing_the_request_names_is_needed_in_every_image_and_nothing_else_is_added(self):
+        acts = [{"who": ["woman"], "act": "typing on a laptop", "to": []}]
+        result, _, outcome = plan(kept={"objects": "a red umbrella"}, acts=acts)
+        self.assertEqual(outcome["Objects & Props"], "dealt")
+        self.assertEqual([result["needed"][number]["Objects & Props"] for number in range(1, 5)],
+                         [["umbrella", "laptop"]] * 4, "the kept object and the act's object, in every image")
+        self.assertFalse([hand for hand in result["hands"].values() if "Objects & Props" in hand], "no optional object")
+        unnamed, _, _ = plan(kept={"objects": "a hammock"}, acts=[{"who": ["woman"], "act": "resting", "to": []}])
+        self.assertEqual(unnamed["needed"], {}, "no entry names it: the request's own words stay")
+        own, _, _ = plan(["Objects/Furniture"], kept={"objects": "a red umbrella"})
+        self.assertFalse([items for items in own["needed"].values() if "umbrella" in str(items)],
+                         "a selected pack comes instead of the built-in ones")
 
     def test_scene_ideas_get_no_dealt_places(self):
         result, _, outcome = plan(guided=True)
