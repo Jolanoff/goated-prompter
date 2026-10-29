@@ -369,7 +369,7 @@ happens, never what it is: an entry showing a different act does not fit.
 | Guided input assignment | `v2/assignments.py` |
 | Vocabulary categories, pack discovery and the vocabulary prompt section | `features/vocabulary/catalog.py` |
 | Optional pack features (people count, slots) | `features/vocabulary/catalog.py`, `v2/scenes/entries.py` `fit_cast`, `features/vocabulary/retrieval.py` `for_cast`, `v2/scenes/slots.py` |
-| Scene composition | `v2/scenes/` (`texts.py` instructions, `request.py` what the writer is asked, `entries.py` vocabulary offered and suggestions dealt, `actions.py` Actions & Poses, `props.py` Objects & Props, `places.py`, `looks.py`, `camera.py`, `checks.py` scene checks, `writer.py` batch and retries, `settings.py` limits; `write_scenes` in `__init__.py`) |
+| Scene composition | `v2/scenes/` (`texts.py` instructions, `request.py` what the writer is asked, `policies.py` one `VocabularyPolicy` per vocabulary category and `plan_vocabulary`, the engine that plans every image's vocabulary in a fixed order, `entries.py` vocabulary offered and suggestions dealt, `actions.py` Actions & Poses, `props.py` Objects & Props, `places.py`, `looks.py`, `camera.py`, `checks.py` scene checks, `writer.py` batch and retries, `settings.py` limits; `write_scenes` in `__init__.py`) |
 | Final prompts through the Builder | `v2/prompts.py` |
 
 ## Seeds

@@ -199,9 +199,9 @@ class SceneVariety(Harness):
         self.assertIn("FRAMES", written, "known characters still fill the frame field")
         self.assertIn("Each known character (man 1) is shown at least head to hips", written)
         self.assertNotIn("Each image in IMAGES names the frame", written)
-        self.assertFalse(scenes.deals_frames(self.brief))
-        self.assertTrue(scenes.deals_frames({**self.brief, "consistency": {**self.brief["consistency"], "camera": "free"}}))
-        self.assertFalse(scenes.deals_frames({**self.brief, "characters": [{"label": "man 1"}]}), "no known character")
+        self.assertFalse(scenes.request.deals_frames(self.brief))
+        self.assertTrue(scenes.request.deals_frames({**self.brief, "consistency": {**self.brief["consistency"], "camera": "free"}}))
+        self.assertFalse(scenes.request.deals_frames({**self.brief, "characters": [{"label": "man 1"}]}), "no known character")
 
     def test_a_frame_narrower_than_its_own_camera_is_widened(self):
         # A live set framed a known character head to knees in every image while each camera showed the feet; the

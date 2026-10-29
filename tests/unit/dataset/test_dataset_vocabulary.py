@@ -284,10 +284,10 @@ class SceneVocabulary(unittest.TestCase):
         spaces = ["a library table", "a quiet library aisle", "a museum hall", "a storage room", "a cafe",
                   "a music room", "a hotel lobby", "a park bench", "a train", "a balcony", "a garden", "a garage"]
         groups = [{"category": "Spaces", "packs": [{"name": "Reading Spaces", "entries": spaces}]}]
-        hands = scenes.deal_hands(groups, 6, random.Random(3), words=frozenset({"people", "reading", "library"}))
+        hands = scenes.entries.deal_hands(groups, 6, random.Random(3), words=frozenset({"people", "reading", "library"}))
         self.assertTrue(all(hand["Spaces"] and all("library" in entry for entry in hand["Spaces"])
                             for hand in hands.values()), hands)
-        general = scenes.deal_hands(groups, 6, random.Random(3), words=frozenset({"reading", "spaces", "library"}))
+        general = scenes.entries.deal_hands(groups, 6, random.Random(3), words=frozenset({"reading", "spaces", "library"}))
         self.assertTrue(all(len(hand["Spaces"]) == 2 for hand in general.values()), "the kind asked for in general")
 
     def test_a_request_word_naming_another_categorys_pack_never_pins_one_entry(self):
@@ -298,9 +298,9 @@ class SceneVocabulary(unittest.TestCase):
                  "a blue cup", "a book", "a clock"]
         groups = [{"category": "Actions & Poses", "packs": [{"name": "Public Walks", "entries": ["A walks past B"]}]},
                   {"category": "Objects & Props", "packs": [{"name": "Things", "entries": props}]}]
-        hands = scenes.deal_hands(groups, 6, random.Random(3), words=frozenset({"two", "people", "public", "places"}))
+        hands = scenes.entries.deal_hands(groups, 6, random.Random(3), words=frozenset({"two", "people", "public", "places"}))
         self.assertGreater(len({hand["Objects & Props"][0] for hand in hands.values()}), 1, hands)
-        named = scenes.deal_hands(groups, 6, random.Random(3), words=frozenset({"public", "notice"}))
+        named = scenes.entries.deal_hands(groups, 6, random.Random(3), words=frozenset({"public", "notice"}))
         self.assertEqual({hand["Objects & Props"][0] for hand in named.values()}, {"a public notice taped to his back"},
                          "a word of its own that the request names still asks for that entry")
 
@@ -320,8 +320,8 @@ class SceneVocabulary(unittest.TestCase):
         self.assertEqual(scenes.requested_entries(["a lantern", "a lamp"], frozenset({"lamp"})), ["a lamp"])
         import random
         groups = [{"category": "Lighting", "packs": [{"entries": ["spotlight", "chiaroscuro", "red light"]}]}]
-        self.assertEqual(scenes.deal_hands(groups, 4, random.Random(3)),
-                         scenes.deal_hands(groups, 4, random.Random(3), words=frozenset({"knight"})),
+        self.assertEqual(scenes.entries.deal_hands(groups, 4, random.Random(3)),
+                         scenes.entries.deal_hands(groups, 4, random.Random(3), words=frozenset({"knight"})),
                          "no entry about the request: the same seeded deal as before")
 
     def slot_packs(self, poses, props=("wine glass", "teapot", "fruit bowl", "candle"), people=None):
@@ -625,9 +625,9 @@ class SceneVocabulary(unittest.TestCase):
         self.assertTrue(result["complete"])
 
     def test_fewer_entries_than_images_raise_the_cap(self):
-        self.assertEqual(scenes.entry_cap(["a", "b", "c"], 10), 4)
-        self.assertEqual(scenes.entry_cap(["a"] * 20, 10), 2)
-        self.assertIsNone(scenes.entry_cap([], 10))
+        self.assertEqual(scenes.entries.entry_cap(["a", "b", "c"], 10), 4)
+        self.assertEqual(scenes.entries.entry_cap(["a"] * 20, 10), 2)
+        self.assertIsNone(scenes.entries.entry_cap([], 10))
 
     def test_unselected_subjects_never_supply_character_looks(self):
         pair = [{"label": "man", "gender": "male", "custom": "", "pronoun": "he", "count": 1},

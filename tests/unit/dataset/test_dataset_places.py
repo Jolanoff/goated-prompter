@@ -290,7 +290,7 @@ class PlaceCheck(unittest.TestCase):
 class DealtPlaces(Harness):
     def setUp(self):
         super().setUp()
-        enter_context(self, patch("goated_prompter.features.dataset.v2.scenes.place_plan", places.place_plan))
+        enter_context(self, patch("goated_prompter.features.dataset.v2.scenes.policies.place_plan", places.place_plan))
 
     def write(self):
         from goated_prompter.features.dataset.v2 import scenes

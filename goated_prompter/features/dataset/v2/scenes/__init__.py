@@ -35,6 +35,10 @@ Cameras (camera.py): every image is dealt one whole camera (shot, angle and view
 shape and what the request asks to show, keeping the request's own camera words; a known character's frame is the
 dealt shot's. The user's own Camera & Composition packs stay suggestions instead.
 
+Every category's vocabulary is planned by one engine (policies.py plan_vocabulary): a VocabularyPolicy per category
+says when it takes part, when its built-in packs are used, what the scene needs without vocabulary and what its own
+functions filter and deal; the engine runs them in a fixed order, so every seed deals as before.
+
 Optional pack features: entries that need more people than the cast (a pack's "people") are removed before anything
 else (fit_cast), and so are entries with a slot ("holding [Kitchen-and-Dining]") that names a pack or category the run
 did not select (only_fillable). A slot that is kept stays as written: the writer sees the pack it names among the
@@ -73,30 +77,16 @@ from .....contracts import effective_model_family
 from .....director_profiles import resolve_director_config
 from ....vocabulary.catalog import catalog_for, selected_vocabulary, record as selection_record, validate_selection, vocabulary_prompt
 from ....vocabulary.embeddings import embeddings_for
-from ....vocabulary.retrieval import fit_scores, groups_of, telling_words
-from ....vocabulary.selection import deal_spread, pair
 from ..understanding import validate_brief
 
-from ..consistency import kept_words, levels, locked_categories
 from .checks import _summary, avoid_patterns, retire_fields, scene_errors
-from .actions import act_plans, action_plan, deal_actions, deal_assignments, suited_to_place, with_roles
-from .entries import _entry_key, deal_frames, _only, _shuffled, cast_size, deal_hands, entry_cap, fit_cast, kept_things, offered_groups, requested_entries, requested_words, required_frame
-from .request import _system, compose_instruction, compose_message, deals_frames, known_labels, slot_inputs, subject_fields, trigger_notes, varied_labels
-from .settings import ACTIONS_CATEGORY, BATCH, EARLIER, KNOWN_SUBJECT_FIELDS, ROUNDS, SECTIONS, SUBJECT_FIELDS, VOCABULARY_SAMPLE
-from .camera import CAMERA, camera_frames, camera_groups, deal_cameras
-from .looks import SUBJECTS, deal_looks, look_groups, look_words, requested_details
-from .places import SPACES, arrangement, place_plan
-from .props import OBJECTS, deal_props
+from .entries import _shuffled, cast_size, fit_cast, requested_entries
+from .policies import plan_vocabulary
+from .request import _system, compose_instruction, compose_message, known_labels, slot_inputs, subject_fields, trigger_notes, varied_labels
+from .settings import BATCH, EARLIER, KNOWN_SUBJECT_FIELDS, ROUNDS, SECTIONS, SUBJECT_FIELDS, VOCABULARY_SAMPLE
 from .slots import only_fillable
 from .texts import COMPOSE_SYSTEM, ENTRY_RULE, GUIDED_RULE, NO_PEOPLE_RULE, NSFW_RULE, SFW_RULE, VOCABULARY_RULES
 from .writer import _compose
-
-
-def _entries_text(assigned):
-    """{slot: the entries of an image's acts as one text} for what reads the dealt pose as words (pairing a place,
-    suiting an object); images without any entry are left out."""
-    return {number: text for number, items in assigned.items()
-            if (text := "; ".join(item["entry"] for item in items if item["entry"]))}
 
 
 def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=print, on_slot=lambda *_: None,
@@ -125,81 +115,8 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
     # Vocabulary search by meaning: a small separate embedding model, started only when a search needs it.
     embeddings = None if guided else embeddings_for(effective, progress)
     with closing(embeddings) if embeddings else nullcontext(), create_backend(effective).generation_session() as session:
-        # The act and arrangement of every image, from the selected Actions & Poses packs (no model call): one plan for
-        # one act, or one plan per act for separate acts (act_plans), each act kept with its own people and roles.
-        offered = offered_groups(catalog, ACTIONS_CATEGORY, selection, groups)
-        plans = act_plans(brief, offered, embeddings)
-        poses = action_plan(brief, offered, embeddings) if plans is None else [
-            group for _, found in plans for group in found]
-        action_entries = [entry for group in poses for entry in group["entries"]]
-        groups = _only(groups, ACTIONS_CATEGORY, action_entries)
-        # The place of every image comes from the place catalogs, not the writer (scene ideas bring their own).
-        spaces = [] if guided else groups_of(catalog, SPACES, selection)
-        places, setting = place_plan(brief, spaces, embeddings) if spaces else ([], "")
-        if places:  # Spaces is dealt as places, never offered as suggestions or a list to pick from
-            groups = [group for group in groups if group["category"] != SPACES]
-        locked = locked_categories(brief)
-        # The request's spatial relations go with every image, places dealt or not (the user's scene ideas keep theirs).
-        plan_arrangement = [] if guided else arrangement(brief)
-        locked_act = levels(brief)["action"] == "locked"
-        assigned = (with_roles(deal_assignments(plans, total, rng, locked_act))
-                    if plans and poses else None)
-        dealt = (_entries_text(assigned) if assigned is not None
-                 else deal_actions(poses, total, rng, locked_act) if poses else {})
-        objects = [] if OBJECTS in locked else offered_groups(catalog, OBJECTS, selection, groups)
-        plan = {"entries": {_entry_key(entry): entry for entry in action_entries} or None,
-                "cap": total if levels(brief)["action"] == "locked" else entry_cap(action_entries, total), "used": {},
-                "dealt": {} if assigned is not None else dealt, "arrangement": plan_arrangement,
-                "hands": deal_hands([group for group in groups if group["category"] not in locked], total, rng,
-                                    words=requested_words(brief), owned={OBJECTS} if objects else frozenset(),
-                                    own_words={OBJECTS: kept_things(brief)}),
-                "props": [entry for group in groups if group["category"] != ACTIONS_CATEGORY
-                          for pack in group["packs"] for entry in pack["entries"]]}
-        if deals_frames(brief):  # dealt last, so runs without dealt frames deal exactly as before
-            plan["frames"] = deal_frames(total, rng, required_frame(brief))
-        if places:  # after everything else, so every other deal is seeded as before
-            plan["places"] = deal_spread(places, total, rng, locked=levels(brief)["place"] == "locked")
-            if dealt and levels(brief)["place"] != "locked":  # each dealt pose gets the dealt place that suits it best
-                plan["places"] = pair(plan["places"], dealt, lambda pose, entries: fit_scores(pose, entries, embeddings))
-            if assigned is not None:  # an entry its image's place does not suit is dropped there, never its act
-                assigned = suited_to_place(assigned, plan["places"], [entry for group in places for entry in
-                                                                      group["entries"]], embeddings)
-                dealt = _entries_text(assigned)
-            plan["setting"], plan["place_words"] = setting, telling_words(spaces)
-        if assigned is not None:
-            plan["composed"] = assigned
-            # The writer is offered only the entries its images were dealt: one dropped for the place would
-            # otherwise still be listed and used.
-            groups = _only(groups, ACTIONS_CATEGORY, [item["entry"] for items in assigned.values() for item in items
-                                                      if item["entry"]])
-        # The things the request keeps are needed in every image; the other suggestions stay optional.
-        plan["needed"] = {number: {OBJECTS: hand.pop(OBJECTS)} for number, hand in plan["hands"].items()
-                          if OBJECTS in hand}
-        if objects and not plan["needed"]:  # the request keeps none: an optional object that suits each image
-            act = kept_words(brief).get("action", "")
-            scene_of = {number: " ".join(filter(None, (dealt.get(number), act, (plan.get("places") or {}).get(number))))
-                        for number in range(1, total + 1)}
-            partners = {number: text for number, text in scene_of.items() if text}
-            props = deal_props(objects, total, rng, partners, embeddings)
-            for number, prop in props.items():
-                plan["hands"].setdefault(number, {})[OBJECTS] = [prop]
-        # The looks of the people who vary, from the built-in looks; the user's own Subjects packs stay suggestions.
-        own_subjects = any(group["category"] == SUBJECTS for group in groups)
-        looks = [] if guided or own_subjects else look_groups(catalog)
-        if looks and (dealt_looks := deal_looks(brief, looks, total, rng, embeddings)):
-            plan["looks"], plan["look_words"] = dealt_looks, look_words(looks, brief, dealt_looks)
-        # What the request says each person looks like holds in every image, looks or not.
-        plan["details"] = requested_details(brief, looks, embeddings)
-        # The camera of every image, from the built-in cameras, for its pose, the image shape and what must show; the
-        # user's own Camera & Composition packs stay suggestions. Dealt last, so every other deal is seeded as before.
-        own_cameras = any(group["category"] == CAMERA for group in groups)
-        cameras = [] if guided or own_cameras else camera_groups(catalog)
-        posed = ({number: [item["entry"] or item["act"] for item in items] for number, items in assigned.items()}
-                 if assigned is not None else dealt)  # every act of a composed image: one camera for all of them
-        if cameras and (dealt_cameras := deal_cameras(brief, cameras, total, rng, posed)):
-            plan["cameras"] = dealt_cameras
-            if brief["_known"] and (frames := camera_frames(dealt_cameras)):
-                plan["frames"] = frames  # the known characters' frame is the dealt shot's
+        # Every image's vocabulary, category by category (policies.py: no model call).
+        plan, groups, _ = plan_vocabulary(brief, catalog, selection, groups, embeddings, rng, guided)
         for start in range(0, total, BATCH):
             numbers = list(range(start + 1, min(total, start + BATCH) + 1))
             earlier = [_summary(scenes[number]) for number in sorted(scenes)][-EARLIER:]

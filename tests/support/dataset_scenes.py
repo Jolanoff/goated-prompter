@@ -9,13 +9,13 @@ from tests.helpers import enter_context
 def without_places(test):
     """For scripted tests that are not about places: no place is dealt (v2/scenes/places.py), so the writer chooses
     the place as before. tests/unit/dataset/test_dataset_places.py tests the deal."""
-    enter_context(test, patch("goated_prompter.features.dataset.v2.scenes.place_plan", return_value=([], "")))
+    enter_context(test, patch("goated_prompter.features.dataset.v2.scenes.policies.place_plan", return_value=([], "")))
 
 
 def without_looks(test):
     """For scripted tests that are not about looks: no look is dealt (v2/scenes/looks.py), so the writer chooses
     looks as before. tests/unit/dataset/test_dataset_looks.py tests the deal."""
-    enter_context(test, patch("goated_prompter.features.dataset.v2.scenes.deal_looks", return_value={}))
+    enter_context(test, patch("goated_prompter.features.dataset.v2.scenes.policies.deal_looks", return_value={}))
 
 
 def composer_user(message):

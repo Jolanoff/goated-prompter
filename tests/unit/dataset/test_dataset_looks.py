@@ -230,7 +230,7 @@ class LookCheck(unittest.TestCase):
 class DealtLooks(Harness):
     def setUp(self):
         super().setUp()
-        enter_context(self, patch("goated_prompter.features.dataset.v2.scenes.deal_looks", looks.deal_looks))
+        enter_context(self, patch("goated_prompter.features.dataset.v2.scenes.policies.deal_looks", looks.deal_looks))
         self.brief["input"]["amount"] = 2
 
     def write(self, vocabulary=None):

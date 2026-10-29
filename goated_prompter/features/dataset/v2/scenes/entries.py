@@ -13,10 +13,15 @@ from .settings import ACTIONS_CATEGORY, AT_LEAST_HIPS, ENTRY_CAP, HAND
 def offered_groups(catalog, category, selection, groups):
     """One category's groups for the vocabulary engine (retrieval.groups_of) with only the entries the run offers: the
     selected vocabulary's (groups) after its cast and slot checks (fit_cast, slots.only_fillable)."""
+    return offered(groups_of(catalog, category, selection), category, groups)
+
+
+def offered(rows, category, groups):
+    """The retrieved groups of one category (rows, retrieval.groups_of) with only the entries the run offers (see
+    offered_groups)."""
     keep = {entry for group in groups if group["category"] == category for pack in group["packs"]
             for entry in pack["entries"]}
-    rows = [{**row, "entries": [entry for entry in row["entries"] if entry in keep]}
-            for row in groups_of(catalog, category, selection)]
+    rows = [{**row, "entries": [entry for entry in row["entries"] if entry in keep]} for row in rows]
     return [row for row in rows if row["entries"]]
 
 
