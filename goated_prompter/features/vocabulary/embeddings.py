@@ -4,6 +4,8 @@ The model is a GGUF run by its own llama-server on the CPU (backends/llama_cpp_p
 the generation model, set by local_llama_cpp.embedding_model_path; without it retrieval works by words alone. Entry and
 group texts are embedded once and cached by their text in one file per model, so only new or changed texts are
 embedded again; query texts are kept for the run. When the embedder fails, embeddings are off for the rest of the run.
+The cache is rebuilt from the vocabulary when lost, so it has no size limit; document vectors are held as 32-bit float
+arrays, exactly the cached values.
 """
 
 import base64
@@ -80,9 +82,11 @@ class Embeddings:
                 return None
             for text, vector in zip(missing, vectors):
                 cache[self._key(text)] = base64.b64encode(array("f", vector).tobytes()).decode("ascii")
-            atomic_json(self.path, {"model": self.embedder.model_id, "vectors": cache})
+            # A cache, rebuilt from the vocabulary when lost: no user-store size limit, which a large vocabulary passes.
+            atomic_json(self.path, {"model": self.embedder.model_id, "vectors": cache}, bounded=False)
         for key in {self._key(text) for text in texts} - set(self._vectors):
-            self._vectors[key] = list(array("f", base64.b64decode(cache[key])))
+            # Kept as the cached 32-bit floats (array), a tenth of the memory of a list of Python floats, same values.
+            self._vectors[key] = array("f", base64.b64decode(cache[key]))
         return [self._vectors[self._key(text)] for text in texts]
 
     def query(self, text):

@@ -21,9 +21,11 @@ def _replace(source, destination, attempts=5, delay=0.05):
             time.sleep(delay * (attempt + 1))
 
 
-def atomic_json(path, payload):
+def atomic_json(path, payload, bounded=True):
+    """Write payload as JSON in one atomic replace. User data stores are bounded (MAX_STORE_BYTES); bounded=False only
+    for a cache the app can rebuild (the vocabulary embedding cache), which grows with the vocabulary."""
     data = (json.dumps(payload, ensure_ascii=True, indent=2) + "\n").encode("utf-8")
-    if len(data) > MAX_STORE_BYTES:
+    if bounded and len(data) > MAX_STORE_BYTES:
         raise ValueError("JSON store exceeds the 16 MiB limit. Export or remove records first.")
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = None

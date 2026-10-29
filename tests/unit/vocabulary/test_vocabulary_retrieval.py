@@ -250,6 +250,23 @@ class Meaning(unittest.TestCase):
         self.assertEqual(len(other.embedded[0]), 3, "another model embeds everything again")
         self.assertAlmostEqual(sum(value * value for value in first[0]), 1.0, places=5, msg="unit length")
 
+    def test_cached_vectors_are_compact_and_the_cache_has_no_user_store_size_limit(self):
+        # A large vocabulary passed the 16 MiB user-store limit and the run failed while saving the cache; decoded
+        # vectors kept as Python float lists took ten times the memory of the cached 32-bit floats.
+        from array import array
+        from unittest.mock import patch
+        from goated_prompter.json_store import atomic_json
+        texts = [retrieval.group_text(row) for row in self.pool]
+        with patch.object(vectors_module, "atomic_json") as save:
+            self.embeddings().documents(texts)
+        self.assertIs(save.call_args.kwargs["bounded"], False, "the cache is saved without the user-store limit")
+        vectors = self.embeddings().documents(texts)
+        self.assertTrue(all(isinstance(vector, array) and vector.typecode == "f" for vector in vectors))
+        self.assertEqual(self.embeddings().documents(texts), vectors, "a later run reads the same values back")
+        with self.assertRaisesRegex(ValueError, "16 MiB"):
+            atomic_json(self.folder / "store.json", {"records": "x" * (16 * 1024 * 1024)})
+        self.assertFalse((self.folder / "store.json").exists(), "user stores keep their limit")
+
     def test_queries_are_embedded_once_per_run_and_together(self):
         embedder = Embedder(self.vectors)
         embeddings = self.embeddings(embedder)
@@ -269,6 +286,28 @@ class Meaning(unittest.TestCase):
                          retrieval.word_scores(self.pool, "a sleeping chamber"), "words alone")
         self.assertTrue(embeddings.failed)
         self.assertEqual(len(notes), 1)
+
+    def test_an_embedding_server_has_an_exit_hook_only_while_it_runs(self):
+        # Every run's embedder registered an exit hook for good, so a long-running app kept one per run.
+        from unittest.mock import MagicMock, patch
+        from goated_prompter.backends import llama_cpp_process as llama
+        config = MagicMock(host="127.0.0.1", startup_timeout=5, executable=self.folder / "server.exe")
+        config.command.return_value = ["server"]
+        process = MagicMock(pid=7)
+        process.poll.return_value = None
+        with patch.object(llama, "atexit") as hooks, patch.object(llama, "_spawn", return_value=process), \
+                patch.object(llama, "_await_health", return_value="ready"), patch.object(llama, "_stop") as stop:
+            embedder = llama.LlamaCppEmbedder(config)
+            hooks.register.assert_not_called()
+            embedder._start()
+            hooks.register.assert_called_once_with(embedder.close)
+            embedder.close()
+            hooks.unregister.assert_called_with(embedder.close)
+            stop.assert_called_once_with(process)
+            with patch.object(llama, "_await_health", return_value=3):
+                with self.assertRaisesRegex(BackendGenerationError, "exited during startup with code 3"):
+                    embedder._start()
+            self.assertIsNone(embedder._process, "a server that failed to start is let go, its hook with it")
 
     def test_the_embedding_model_comes_from_the_llama_settings(self):
         self.assertIsNone(vectors_module.embeddings_for({"backend": "mock"}))

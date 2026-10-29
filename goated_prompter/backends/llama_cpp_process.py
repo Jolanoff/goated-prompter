@@ -40,6 +40,47 @@ def _path_text(path):
     return str(path) if path is not None else "NONE"
 
 
+def _spawn(command, cwd):
+    """A llama-server child with no console window and no inherited streams (OSError goes to the caller)."""
+    kwargs = {"cwd": str(cwd), "stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL,
+              "stderr": subprocess.DEVNULL, "shell": False}
+    if os.name == "nt":
+        kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    else:
+        kwargs["start_new_session"] = True
+    return subprocess.Popen(command, **kwargs)
+
+
+def _await_health(process, health_url, timeout, interval):
+    """"ready" once the server answers its health check, its exit code when it stops first, None at the deadline."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        code = process.poll()
+        if code is not None:
+            return code
+        try:
+            with _DIRECT_OPENER.open(health_url, timeout=1.0) as response:
+                if response.status == 200:
+                    return "ready"
+        except HTTPError as exc:
+            if exc.code != 503:
+                time.sleep(interval)
+        except (URLError, TimeoutError, OSError):
+            pass
+        time.sleep(interval)
+    return None
+
+
+def _stop(process):
+    """Terminate a child, and kill it when it has not stopped within 5 seconds."""
+    process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
+
+
 def _model_identity(config):
     return f"{config.requested_model} | model={config.model_path} | mmproj={_path_text(config.mmproj_path)}"
 
@@ -422,39 +463,17 @@ class LlamaCppProcessManager:
         _log(f"Model: {config.model_path}")
         _log(f"mmproj: {_path_text(config.mmproj_path)}")
         _log(f"Command: {_command_text(command)}")
-        kwargs = {
-            "cwd": str(config.executable.parent),
-            "stdin": subprocess.DEVNULL,
-            "stdout": subprocess.DEVNULL,
-            "stderr": subprocess.DEVNULL,
-            "shell": False,
-        }
-        if os.name == "nt":
-            kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        else:
-            kwargs["start_new_session"] = True
         try:
-            return subprocess.Popen(command, **kwargs)
+            return _spawn(command, config.executable.parent)
         except OSError as exc:
             raise BackendGenerationError(f"Could not start local llama.cpp server: {exc}") from exc
 
     def _wait_until_ready(self, owned):
-        deadline = time.monotonic() + owned.config.startup_timeout
-        health_url = f"{owned.config.base_url}/health"
-        while time.monotonic() < deadline:
-            code = owned.process.poll()
-            if code is not None:
-                raise BackendGenerationError(f"Owned llama.cpp server exited during startup with code {code}.")
-            try:
-                with _DIRECT_OPENER.open(health_url, timeout=1.0) as response:
-                    if response.status == 200:
-                        return
-            except HTTPError as exc:
-                if exc.code != 503:
-                    time.sleep(0.25)
-            except (URLError, TimeoutError, OSError):
-                pass
-            time.sleep(0.25)
+        result = _await_health(owned.process, f"{owned.config.base_url}/health", owned.config.startup_timeout, 0.25)
+        if result == "ready":
+            return
+        if result is not None:
+            raise BackendGenerationError(f"Owned llama.cpp server exited during startup with code {result}.")
         raise BackendGenerationError(
             f"Owned llama.cpp server did not become ready within {owned.config.startup_timeout:g} seconds."
         )
@@ -479,15 +498,8 @@ class LlamaCppProcessManager:
             if process.poll() is not None:
                 return
             _log(f"Stopping llama-server PID {pid}")
-            process.terminate()
-            process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            try:
-                process.kill()
-                process.wait(timeout=5)
-            except (OSError, subprocess.TimeoutExpired):
-                pass
-        except OSError:
+            _stop(process)
+        except (OSError, subprocess.TimeoutExpired):
             pass
         if process.poll() is None:
             raise BackendGenerationError(f"Could not stop owned llama.cpp server PID {pid}; retry unloading it.")
@@ -539,7 +551,8 @@ class LlamaCppEmbeddingConfig:
 
 
 class LlamaCppEmbedder:
-    """Embeds texts with an owned embedding llama-server, started on the first embed and stopped by close()."""
+    """Embeds texts with an owned embedding llama-server, started on the first embed and stopped by close(). Its exit
+    hook is registered only while its server runs, so finished runs leave no hook behind."""
 
     BATCH = 64
 
@@ -547,7 +560,6 @@ class LlamaCppEmbedder:
         self.config = config
         self._process, self._port = None, None
         self._lock = threading.Lock()
-        atexit.register(self.close)
 
     @property
     def model_id(self):
@@ -568,31 +580,18 @@ class LlamaCppEmbedder:
             port = probe.getsockname()[1]
         command = self.config.command(port)
         _log(f"Starting embedding llama-server: {_command_text(command)}")
-        kwargs = {"cwd": str(self.config.executable.parent), "stdin": subprocess.DEVNULL,
-                  "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL, "shell": False}
-        if os.name == "nt":
-            kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        else:
-            kwargs["start_new_session"] = True
         try:
-            process = subprocess.Popen(command, **kwargs)
+            process = _spawn(command, self.config.executable.parent)
         except OSError as exc:
             raise BackendGenerationError(f"Could not start the embedding llama.cpp server: {exc}") from exc
         self._process, self._port = process, port
-        deadline = time.monotonic() + self.config.startup_timeout
-        while time.monotonic() < deadline:
-            if process.poll() is not None:
-                self.close()
-                raise BackendGenerationError(f"The embedding llama.cpp server exited during startup with code "
-                                             f"{process.returncode}.")
-            try:
-                with _DIRECT_OPENER.open(f"{self._url}/health", timeout=1.0) as response:
-                    if response.status == 200:
-                        return
-            except (HTTPError, URLError, TimeoutError, OSError):
-                pass
-            time.sleep(0.1)
+        atexit.register(self.close)
+        result = _await_health(process, f"{self._url}/health", self.config.startup_timeout, 0.1)
+        if result == "ready":
+            return
         self.close()
+        if result is not None:
+            raise BackendGenerationError(f"The embedding llama.cpp server exited during startup with code {result}.")
         raise BackendGenerationError("The embedding llama.cpp server did not become ready in time.")
 
     @property
@@ -623,15 +622,11 @@ class LlamaCppEmbedder:
 
     def close(self):
         process, self._process = self._process, None
+        atexit.unregister(self.close)
         if process is None or process.poll() is not None:
             return
         _log(f"Stopping embedding llama-server PID {process.pid}")
-        process.terminate()
-        try:
-            process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait(timeout=5)
+        _stop(process)
 
 
 _RUNTIME_REGISTRY_KEY = "_goated_prompter_llama_runtime_registry"
