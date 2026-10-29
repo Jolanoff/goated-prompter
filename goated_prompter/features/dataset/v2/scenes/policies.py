@@ -21,21 +21,22 @@ so a seed gives the same images. No model call.
 from dataclasses import dataclass
 from typing import Callable
 
+from ....vocabulary.catalog import always_on
 from ....vocabulary.retrieval import fit_scores, groups_of, telling_words
 from ....vocabulary.selection import deal_spread, pair
 from ..consistency import kept_words, levels, locked_categories
 from .actions import act_plans, action_plan, deal_actions, deal_assignments, suited_to_place, with_roles
 from .camera import CAMERA, camera_frames, deal_cameras
-from .entries import (_only, deal_frames, deal_hands, entry_cap, kept_things, offered, required_frame,
-                      requested_words, _entry_key)
+from .clothing import CLOTHING, deal_outfits, dressed, worn
+from .entries import (_only, deal_frames, deal_hands, deal_named, entry_cap, kept_things, named_things, offered,
+                      required_frame, requested_words, _entry_key)
 from .looks import SUBJECTS, deal_looks, look_words, requested_details
 from .places import SPACES, arrangement, place_plan
-from .props import OBJECTS, deal_named, deal_props, named_things
+from .props import OBJECTS
 from .request import deals_frames
 from .settings import ACTIONS_CATEGORY
 
-CLOTHING, EXPRESSIONS, LIGHTING, MOOD, EFFECTS = (
-    "Clothing", "Expressions", "Lighting", "Mood & Tone", "Effects & Atmosphere")
+EXPRESSIONS, LIGHTING, MOOD, EFFECTS = ("Expressions", "Lighting", "Mood & Tone", "Effects & Atmosphere")
 
 
 @dataclass(frozen=True)
@@ -127,20 +128,20 @@ def _deal_places(run, places):
     return True
 
 
-# Objects & Props (props.py): the things the request keeps are needed in every image (the suggestions step); otherwise
-# an optional object from the selected packs that suits each image's own pose and place, none when nothing does.
-# Without a selected pack, the built-in packs give only the things the request names (its kept objects and its acts),
-# needed in every image; never an optional one.
+# Objects & Props (props.py): the things the request keeps are needed in every image (the suggestions step); otherwise,
+# a selected pack being the user's instruction to use it, one object from all the selected packs' entries in every
+# image, needed, in a seeded spread without repeats until all have been dealt. Without a selected pack, the built-in
+# packs give only the things the request names (its kept objects and its acts), needed in every image.
 def _find_objects(run, rows):
     if locked(OBJECTS, run):
         return []
-    if rows and POLICY[OBJECTS].auto_when(run):  # no Objects & Props pack selected: the rows are the built-in packs
-        brief, words = run["brief"], kept_words(run["brief"])
-        acts = [act["act"] for act in brief.get("acts") or ()] or [words.get("action", "")]
-        place = " ".join(filter(None, (words.get("place", ""), (brief.get("places") or {}).get("setting", ""))))
-        run["named"] = named_things(rows, words.get("objects", ""), acts, place)
-        return []
-    return offered(rows, OBJECTS, run["groups"])
+    found = rows if POLICY[OBJECTS].auto_when(run) else offered(rows, OBJECTS, run["groups"])
+    # The things the request names, in its kept objects or its acts ("playing chess on a chess board"), come first.
+    brief, words = run["brief"], kept_words(run["brief"])
+    acts = [act["act"] for act in brief.get("acts") or ()] or [words.get("action", "")]
+    place = " ".join(filter(None, (words.get("place", ""), (brief.get("places") or {}).get("setting", ""))))
+    run["named"] = named_things(found, words.get("objects", ""), acts, place)
+    return [] if POLICY[OBJECTS].auto_when(run) else found  # the built-in packs give only what is named
 
 
 def _deal_objects(run, objects):
@@ -149,14 +150,13 @@ def _deal_objects(run, objects):
         plan["needed"] = {number: {OBJECTS: entries} for number, entries in deal_named(run["named"], run["total"]).items()}
     if not objects or plan["needed"]:
         return bool(plan["needed"])
-    act = kept_words(run["brief"]).get("action", "")
-    scene_of = {number: " ".join(filter(None, (run["dealt"].get(number), act, (plan.get("places") or {}).get(number))))
-                for number in range(1, run["total"] + 1)}
-    partners = {number: text for number, text in scene_of.items() if text}
-    props = deal_props(objects, run["total"], run["rng"], partners, run["embeddings"])
-    for number, prop in props.items():
-        plan["hands"].setdefault(number, {})[OBJECTS] = [prop]
-    return bool(props)
+    dealt = deal_spread([{"name": OBJECTS, "entries": [entry for group in objects for entry in group["entries"]]}],
+                        run["total"], run["rng"])
+    for number, entry in dealt.items():
+        plan["needed"].setdefault(number, {})[OBJECTS] = [entry]
+    plan["placed"] = True  # the writer places or uses an object the request does not name (PLACED_RULE)
+    run["groups"] = [group for group in run["groups"] if group["category"] != OBJECTS]  # dealt, not a list to pick from
+    return bool(dealt)
 
 
 # Subjects (looks.py): a look for every human whose looks vary, from the built-in looks; what the request says each
@@ -180,6 +180,41 @@ def _deal_cameras(run, cameras):
     if run["brief"]["_known"] and (frames := camera_frames(dealt)):
         run["plan"]["frames"] = frames  # the known characters' frame is the dealt shot's
     return True
+
+
+# Clothing (clothing.py): with a selected Clothing pack, the request's garments on their wearers, and one entry of all
+# the selected packs' entries per image for everyone else who can be dressed, needed as "label: entry". No pack, an
+# adult set or scene ideas: nothing is dealt and a selected pack stays a suggestion, as before.
+def _find_clothing(run, rows):
+    if not rows or run["guided"] or run["brief"]["path"] == "nsfw_character":
+        return []
+    run["dealt_here"].add(CLOTHING)  # its selected packs are dealt here, never also suggested
+    found, brief = offered(rows, CLOTHING, run["groups"]), run["brief"]
+    asked = worn(brief)
+    run["worn"] = {label: things for label, phrases in asked.items()
+                   if (things := named_things(found, "; ".join(phrases)))}
+    pool = list(dict.fromkeys(entry for group in found for entry in group["entries"]))
+    run["pools"] = {person["label"]: pool for person in brief["characters"]
+                    if person["label"] not in asked and dressed(person)}
+    return []  # nothing for the suggestions to hold back: they deal as they always have, then drop Clothing
+
+
+def _deal_clothing(run, _):
+    if CLOTHING not in run["dealt_here"]:
+        return False
+    wear = {number: {} for number in range(1, run["total"] + 1)}
+    for label, things in run["worn"].items():
+        for number, entries in deal_named(things, run["total"]).items():
+            wear[number][label] = entries
+    for number, outfits in deal_outfits(run["pools"], run["total"], run["rng"], locked(CLOTHING, run)).items():
+        for label, entry in outfits.items():
+            wear[number][label] = [entry]
+    order = [person["label"] for person in run["brief"]["characters"]]
+    for number, by_person in wear.items():
+        if by_person:
+            run["plan"]["needed"].setdefault(number, {})[CLOTHING] = [
+                f"{label}: {entry}" for label in order for entry in by_person.get(label, ())]
+    return any(wear.values())
 
 
 def _without_own(category):
@@ -212,7 +247,8 @@ POLICIES = (
                      understanding_fields=("subject",), assignment="per_subject", fallback="writer", deal=_deal_looks),
     VocabularyPolicy(CAMERA, always_available=True, auto_when=_without_own(CAMERA), required_when=lambda run: True,
                      understanding_fields=("camera",), fallback="writer", deal=_deal_cameras),
-    VocabularyPolicy(CLOTHING, required_when=_people, understanding_fields=("clothing",), fallback="writer"),
+    VocabularyPolicy(CLOTHING, required_when=_people, understanding_fields=("clothing",), selected_packs="dealt",
+                     assignment="per_subject", fallback="writer", find=_find_clothing, deal=_deal_clothing),
     VocabularyPolicy(EXPRESSIONS, required_when=_people, understanding_fields=("expression",), fallback="writer"),
     VocabularyPolicy(LIGHTING, required_when=lambda run: True, understanding_fields=("light",), fallback="writer"),
     VocabularyPolicy(MOOD, understanding_fields=("mood",)),
@@ -222,20 +258,22 @@ POLICY = {policy.category: policy for policy in POLICIES}
 
 
 def retrieve(policy, run):
-    """A category's groups (retrieval.groups_of): the user's selected packs first when the category deals them itself,
-    with its always-on packs, else, when it has neither and uses built-in packs for this request (auto_when), all its
-    built-in packs; only the built-in always-on packs when its selected packs stay suggestions and the request uses
-    its built-in ones; none otherwise."""
-    if policy.selected_packs == "dealt":
-        rows = groups_of(run["catalog"], policy.category, run["selection"])
-        if rows or not (policy.always_available and policy.auto_when(run)):
-            return rows
-        built_in = [pack["id"] for pack in run["catalog"]["packs"]
-                    if pack["category"] == policy.category and pack.get("source") == "built-in"]
-        return groups_of(run["catalog"], policy.category, {"packs": built_in})
-    if policy.always_available and policy.auto_when(run):
-        return groups_of(run["catalog"], policy.category, {"packs": []})
-    return []
+    """A category's groups (retrieval.groups_of): the user's selected packs first when the category deals them itself
+    (with its always-on packs); else, when it uses built-in packs for this request (always_available, auto_when), its
+    built-in ones (built_in); none otherwise."""
+    rows = groups_of(run["catalog"], policy.category, run["selection"]) if policy.selected_packs == "dealt" else []
+    if rows or not (policy.always_available and policy.auto_when(run)):
+        return rows
+    return built_in(run["catalog"], policy.category)
+
+
+def built_in(catalog, category):
+    """The built-in groups a category uses without a selection: its always-on catalogs (places, looks, cameras), or,
+    for a category with none, all its built-in packs, from which only what the request names is taken."""
+    if always_on(catalog, category):
+        return groups_of(catalog, category, {"packs": []})
+    return groups_of(catalog, category, {"packs": [pack["id"] for pack in catalog["packs"]
+                                                   if pack["category"] == category and pack.get("source") == "built-in"]})
 
 
 def _suggest(run, found):
@@ -247,7 +285,14 @@ def _suggest(run, found):
     named = {policy.category: policy.needed_words(run) for policy in POLICIES if policy.needed_words}
     plan["hands"] = deal_hands([group for group in left if group["category"] not in held], run["total"],
                                run["rng"], words=requested_words(brief), owned=owned, own_words=named)
-    plan["props"] = [entry for group in left if group["category"] != ACTIONS_CATEGORY
+    # A category its policy deals itself is dealt as above, so every random call stays where it was, then left out of
+    # the suggestions, the copy check and the writer's list.
+    for hand in plan["hands"].values():
+        for category in run["dealt_here"]:
+            hand.pop(category, None)
+    plan["hands"] = {number: hand for number, hand in plan["hands"].items() if hand}
+    run["groups"] = [group for group in run["groups"] if group["category"] not in run["dealt_here"]]
+    plan["props"] = [entry for group in left if group["category"] not in {ACTIONS_CATEGORY, *run["dealt_here"]}
                      for pack in group["packs"] for entry in pack["entries"]]
     plan["needed"] = {number: {category: hand.pop(category) for category in named if category in hand}
                       for number, hand in plan["hands"].items() if set(named) & set(hand)}
@@ -259,7 +304,7 @@ def plan_vocabulary(brief, catalog, selection, groups, embeddings, rng, guided):
     scene needs it, else "none"."""
     run = {"brief": brief, "catalog": catalog, "selection": selection, "groups": groups, "embeddings": embeddings,
            "rng": rng, "guided": guided, "total": brief["input"]["amount"], "levels": levels(brief),
-           "plans": None, "assigned": None, "dealt": {}, "spaces": [], "setting": "", "named": [],
+           "plans": None, "assigned": None, "dealt": {}, "spaces": [], "setting": "", "named": [], "worn": {}, "pools": {}, "dealt_here": set(),
            # The request's spatial relations go with every image, places dealt or not (scene ideas keep their own).
            "plan": {"arrangement": [] if guided else arrangement(brief)}}
     applies = {policy.category: policy.applies_when(run) for policy in POLICIES}

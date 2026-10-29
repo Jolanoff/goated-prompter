@@ -120,6 +120,17 @@ NEEDED_RULES = """NEEDED THINGS
 - A needed entry only names a thing the request asks for: everything the request says of it (its colour, material,
   number, owner and use) still holds, and nothing else is added for it."""
 
+# Sent after the needed rules when a needed Clothing entry belongs to one person (scenes/clothing.py).
+WORN_RULE = """- A needed Clothing entry that starts with a character label ("label: garment") is what that person wears in
+  that image, and only that person: they wear it, with whatever the request says of their clothing, and the rest of
+  their clothing is yours to complete around it."""
+
+# Sent after the needed rules when an image needs an object from the user's selected Objects & Props packs that the
+# request does not name (scenes/policies.py).
+PLACED_RULE = """- A needed Objects & Props entry the request does not name is the object the user chose for that image: show
+  it, used or placed without changing the act or anyone's pose, held by a hand the act leaves free or on a support the
+  space has, else standing in the space."""
+
 
 # The NSFW switch only allows adult content; the request decides what each image shows.
 NSFW_RULE = ("- This dataset is adult content: nudity and sex are allowed wherever the request calls for them, and the "

@@ -1,11 +1,12 @@
 """Actions & Poses and Objects & Props dealt by the shared vocabulary engine (v2/scenes/actions.py, props.py): the
-entries made for the cast that show the request's action, none when no entry shows it, the objects that suit each
-image's pose and place, each paired with its image. Built-in packs and scripted briefs only; no model call."""
+entries made for the cast that show the request's action, none when no entry shows it, and the things the request
+names. Built-in packs and scripted briefs only; no model call."""
 
 import random
 import unittest
 
 from goated_prompter.features.dataset.v2.scenes import actions, props
+from goated_prompter.features.dataset.v2.scenes import entries as entries_module
 from goated_prompter.features.dataset.v2.scenes.entries import offered_groups
 from goated_prompter.features.vocabulary.catalog import load_catalog, selected_vocabulary
 
@@ -209,56 +210,7 @@ class Actions(unittest.TestCase):
         self.assertEqual(len(set(actions.deal_actions(found, 5, random.Random(3), locked=True).values())), 1)
 
 
-class Embedder:
-    """Scripted meaning: a text's vector counts its words from each of a few topics."""
-
-    model_id = "scripted:topics"
-    TOPICS = (("board", "game", "chess", "cards", "dice", "card", "tabletop"),
-              ("sword", "blade", "swordsman", "duel", "swordplay", "knight", "melee"))
-
-    def embed(self, texts):
-        words = lambda text: set(text.casefold().replace(",", " ").replace(":", " ").split())
-        return [[float(len(words(text) & set(topic))) for topic in self.TOPICS] + [1.0] for text in texts]
-
-    def close(self):
-        pass
-
-
-def scripted():
-    from unittest.mock import patch
-    from goated_prompter.features.vocabulary import embeddings as vectors
-    meaning = vectors.Embeddings(Embedder(), None, progress=lambda _: None)
-    meaning._cache = {}
-    patcher = patch.object(vectors, "atomic_json")
-    patcher.start()
-    return meaning, patcher
-
-
 class Props(unittest.TestCase):
-    OBJECTS = ("Objects/Toys-and-Games", "Objects/Weapons", "Objects/Kitchen-and-Dining", "Objects/Furniture")
-
-    def setUp(self):
-        self.meaning, patcher = scripted()
-        self.addCleanup(patcher.stop)
-
-    def test_each_image_gets_an_object_that_suits_its_own_pose_and_place(self):
-        rows = groups(*self.OBJECTS, category="Objects & Props")
-        kind = {entry: group["name"] for group in rows for entry in group["entries"]}
-        partners = {1: "A and B playing chess with cards and dice", 2: "A swordsman in a duel with a blade",
-                    3: "A and B playing chess with cards and dice"}
-        dealt = props.deal_props(rows, 3, random.Random(2), partners, self.meaning)
-        self.assertEqual((kind[dealt[1]], kind[dealt[2]], kind[dealt[3]]),
-                         ("board and card games", "swords and blades", "board and card games"))
-        self.assertNotEqual(dealt[1], dealt[3], "the same pose gets different objects")
-
-    def test_an_optional_object_never_adds_a_second_of_what_the_image_has(self):
-        # A live set offered a second seat to someone already seated, and another tool of the same kind to a worker.
-        seats = {"name": "seating", "words": ["seat"], "entries": ["weathered park bench", "padded stool", "deck chair"]}
-        lamps = {"name": "lamps", "words": ["light"], "entries": ["desk lamp", "lantern"]}
-        kept = props.the_same_things([seats, lamps], "A seated on a bench beside a window")
-        self.assertEqual([row["entries"] for row in kept], [["weathered park bench"], ["desk lamp", "lantern"]],
-                         "the bench they sit on, described more closely; a group it names nothing of is unchanged")
-
     def test_a_needed_thing_the_scene_leaves_out_is_added_to_its_extras(self):
         scene = {"actions": "the woman reads", "position": {}, "space": "a den", "camera": "medium shot",
                  "extras": "a grey cardigan"}
@@ -267,39 +219,23 @@ class Props(unittest.TestCase):
         held = {**scene, "actions": "the woman reads a book, a teacup in her other hand"}
         self.assertEqual(props.with_needed(held, ["porcelain teacup", "hardcover book"]), held, "already shown")
 
-    def test_a_group_deals_only_its_objects_close_to_the_image(self):
-        group = {"name": "brushes", "words": [], "entries": ["A flat brush", "A fan brush", "A spray gun"]}
-        self.assertEqual(props.closest([group], "a painter at an easel", None), [group], "without meaning: unchanged")
-        kept = props.closest([group], "a painter holding a brush", self.meaning)
-        self.assertTrue(kept[0]["entries"] and len(kept[0]["entries"]) <= 3)
-
     def test_built_in_packs_name_only_the_things_the_request_asks_for(self):
         rows = [{"name": "things", "words": [], "entries": ["chess board", "wooden table", "lighthouse", "umbrella",
                                                             "lantern: brass", "lantern: paper"]}]
-        self.assertEqual(props.named_things(rows, "", ["playing chess on a chess board"]), [["chess board"]],
+        self.assertEqual(entries_module.named_things(rows, "", ["playing chess on a chess board"]), [["chess board"]],
                          "an act names the thing it is done with")
-        self.assertEqual(props.named_things(rows, "chess pieces; a board", ["reading"]), [],
+        self.assertEqual(entries_module.named_things(rows, "chess pieces; a board", ["reading"]), [],
                          "words of two phrases never make one name")
-        self.assertEqual(props.named_things(rows, "", ["reading in a lighthouse"], place="a lighthouse"), [],
+        self.assertEqual(entries_module.named_things(rows, "", ["reading in a lighthouse"], place="a lighthouse"), [],
                          "the place, not a thing in it")
-        self.assertEqual(props.named_things(rows, "a lighthouse", [], place="a lighthouse"), [["lighthouse"]],
+        self.assertEqual(entries_module.named_things(rows, "a lighthouse", [], place="a lighthouse"), [["lighthouse"]],
                          "a kept object always counts")
-        things = props.named_things(rows, "a red umbrella; a lantern", ["holding a lantern"])
+        things = entries_module.named_things(rows, "a red umbrella; a lantern", ["holding a lantern"])
         self.assertEqual(things, [["umbrella"], ["lantern: brass", "lantern: paper"]], "each thing once")
-        self.assertEqual(props.deal_named(things, 3), {1: ["umbrella", "lantern: brass"], 2: ["umbrella", "lantern: paper"],
+        self.assertEqual(entries_module.deal_named(things, 3), {1: ["umbrella", "lantern: brass"], 2: ["umbrella", "lantern: paper"],
                                                        3: ["umbrella", "lantern: brass"]},
                          "every thing in every image, entries of one name in turn")
-        self.assertEqual(props.deal_named([], 3), {})
-
-    def test_an_image_nothing_suits_gets_no_object(self):
-        # A slow dance and a hug were suggested a spear and a buckler when every image got an object.
-        rows = groups(*self.OBJECTS, category="Objects & Props")
-        self.assertEqual(props.deal_props(rows, 2, random.Random(2), {1: "A and B in a quiet moment", 2: "A smiling"},
-                                          self.meaning), {})
-        self.assertEqual(len(props.deal_props(rows, 3, random.Random(2), embeddings=self.meaning)), 3,
-                         "no pose or place to suit: any object")
-        self.assertEqual(len(props.deal_props(rows, 2, random.Random(2), {1: "A smiling", 2: "A smiling"})), 2,
-                         "without meaning nothing can be judged: any object, as before")
+        self.assertEqual(entries_module.deal_named([], 3), {})
 
 
 if __name__ == "__main__":

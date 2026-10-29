@@ -192,9 +192,14 @@ class SceneVocabulary(unittest.TestCase):
         packs = ["Actions & Poses/Solo-Activities", "Expressions/Happy-Expressions",
                  "Clothing/Modern-Fashion", "Objects/Furniture"]
         result = self.write(self.brief("A seductive adult character posing with a prop", cast, nsfw=True), packs)
-        vocabulary = composer_user(self.composer()[0].user_message)["vocabulary"]
-        self.assertEqual([line for line in vocabulary.split("\n") if line in {"Actions & Poses", "Expressions", "Clothing", "Objects & Props"}],
-                         ["Actions & Poses", "Objects & Props", "Expressions", "Clothing"], "registry order")
+        user = composer_user(self.composer()[0].user_message)
+        self.assertEqual([line for line in user["vocabulary"].split("\n") if line in {"Actions & Poses", "Expressions", "Clothing", "Objects & Props"}],
+                         ["Actions & Poses", "Expressions", "Clothing"], "registry order; the objects are dealt instead")
+        furniture = next(pack["entries"] for pack in self.catalog["packs"] if pack["id"] == "Objects/Furniture")
+        self.assertTrue(all(image["needed"]["Objects & Props"][0] in furniture for image in user["images"]),
+                        "a selected Objects pack puts one of its objects in every image")
+        self.assertFalse([image for image in user["images"] if "Clothing" in image.get("needed", {})],
+                         "an adult set's selected Clothing stays a suggestion")
         self.assertEqual(len(result["vocabulary"]["selection"]["packs"]), 4)
 
     def test_example_d_a_group_keeps_its_cast_from_understanding(self):
@@ -221,13 +226,16 @@ class SceneVocabulary(unittest.TestCase):
         self.write(brief, packs)
         images = [image for call in self.composer() for image in composer_user(call.user_message)["images"]]
         hands = [image["suggested"] for image in images]
-        self.assertEqual({tuple(sorted(hand)) for hand in hands}, {("Lighting", "Objects & Props")})
-        for category in ("Lighting", "Objects & Props"):
-            dealt = [entry for hand in hands for entry in hand[category]]
-            self.assertTrue(all(len(set(hand[category])) == len(hand[category]) for hand in hands), "no repeat in a hand")
+        self.assertEqual({tuple(sorted(hand)) for hand in hands}, {("Lighting",)})
+        # A selected Objects pack is the user's instruction: one of its objects is needed in every image, dealt through
+        # the whole pack.
+        objects = [image["needed"]["Objects & Props"] for image in images]
+        for category, dealt in (("Lighting", [entry for hand in hands for entry in hand["Lighting"]]),
+                                ("Objects & Props", [entry for needed in objects for entry in needed])):
             pack = {"Lighting": "Lighting/Dramatic", "Objects & Props": "Objects/Furniture"}[category]
             self.assertEqual(set(dealt), set(next(p for p in load_catalog()["packs"] if p["id"] == pack)["entries"]),
                              "every entry is dealt")
+        self.assertTrue(all(len(needed) == 1 for needed in objects), "one object per image")
         system = " ".join(self.composer()[0].system_message.split())
         self.assertIn('none at all when the category does not fit the image', system)
         # Live scenes fixed restraints to furniture the place lacked and wrote a mark on a body part against a wall.
@@ -258,16 +266,16 @@ class SceneVocabulary(unittest.TestCase):
 
     def test_only_the_things_the_request_keeps_name_an_entry(self):
         # A live set read words of the act as asking for objects that share them: a word of the act is no thing. Only
-        # Understanding's kept objects name an entry; the rest are optional suggestions.
+        # Understanding's kept objects name an entry; otherwise the selected pack's objects are dealt across the set.
         hands = self.lights("A knight holding a lamp and practicing his torch juggling")
-        self.assertNotIn("needed", composer_user(self.composer()[0].user_message)["images"][0])
         self.assertNotEqual(hands, [["torch"]] * 4, "no kept thing: no word of the act names an entry")
+        self.assertEqual(len({entry for hand in hands for entry in hand}), 4, "a different object in every image")
         self.assertEqual(self.lights("A knight practicing his torch juggling", "his torch"), [["torch"]] * 4)
         # Understanding's kept objects are the words that mention things, and can name an activity ("practicing
         # juggling" kept "juggling"): only an entry whose whole name they say is needed, so an activity names none and
-        # nothing is ever added to a scene for it.
-        self.lights("A knight practicing juggling at night", "juggling")
-        self.assertNotIn("needed", composer_user(self.composer()[0].user_message)["images"][0])
+        # the pack's objects are dealt instead.
+        hands = self.lights("A knight practicing juggling at night", "juggling")
+        self.assertEqual(len({entry for hand in hands for entry in hand}), 4)
         from goated_prompter.features.dataset.v2.scenes.entries import named_in
         # A live set kept a thing described by its material and then needed other things of that material.
         self.assertEqual(named_in(["paper lantern", "paper fan", "flying kite", "kite"], {"small", "paper", "kite"}),
@@ -383,8 +391,8 @@ class SceneVocabulary(unittest.TestCase):
                          {"the person reading", "the person stretching by the window"}, "an entry without a count fits")
         self.assertNotIn("two people dancing close", user["vocabulary"])
         self.assertNotIn("two-seat swing", user["vocabulary"])
-        suggested = {entry for image in user["images"] for entry in image["suggested"]["Objects & Props"]}
-        self.assertEqual(suggested, {"wine glass", "teapot"}, "an object without a count always stays")
+        dealt = {entry for image in user["images"] for entry in image["needed"]["Objects & Props"]}
+        self.assertEqual(dealt, {"wine glass", "teapot"}, "an object without a count always stays")
         catalog = self.slot_packs(poses, props, people)
         self.write(self.brief("A couple at home", self.PAIR, amount=4), ["Actions & Poses/Test-Poses", "Objects/Test-Props"],
                    catalog=catalog)
@@ -392,7 +400,8 @@ class SceneVocabulary(unittest.TestCase):
         self.assertEqual({image["entry"] for image in user["images"]},
                          {"two people dancing close", "the person stretching by the window"},
                          "a pair gets the entries made for two, never one made for one person alone")
-        self.assertIn("two-seat swing", user["vocabulary"], "an object for fewer people than the cast still fits")
+        self.assertEqual({entry for image in user["images"] for entry in image["needed"]["Objects & Props"]},
+                         {"wine glass", "two-seat swing", "teapot"}, "an object for fewer people than the cast still fits")
 
     def test_a_kept_action_lets_only_entries_that_show_it_fit(self):
         # A request naming one position got scenes built on other positions its activity also covers.

@@ -279,14 +279,20 @@ object (a game the act names is no game board: `deal_hands` with `own_words`). W
 pack, the built-in Objects packs give only the things the request names by their whole name, in a phrase of the kept
 objects or of one of Understanding's acts (an act's thing the place's own words name is the place), as `needed` in every
 image (`named_things`, `deal_named`: no random call, never an optional object), and the writer gets `NEEDED_RULES`; a
-thing no built-in entry names keeps the request's words. With a selected pack, otherwise every image is suggested one
-optional object from the groups that clearly suit its own dealt pose, the request's act and its place (`suiting`,
-`SUIT_Z`: a group judged by its name and words, which say what its objects are for); a group whose object the image
-already names offers only that object, described more closely (`the_same_things`: the painter's brush, the bench
-someone sits on, never a second brush or another seat beside them), and a group deals only its objects at least as close to the
-image as its average (`closest`). An optional object goes only on a body part or support the act leaves free, or in
-the space (`VOCABULARY_RULES`); none when nothing suits, so no action and object pair is ever listed and every image's pose, place, object and people make
-one scene. Every scene names the entry it is built on (`entry`); code checks the entry is one of the fitting ones and that no
+thing no built-in entry names keeps the request's words. A selected pack is the user's instruction to use it, with no
+trigger matching, relevance threshold or world filter: with a selected Objects & Props pack and nothing kept, all the
+selected packs' entries are one pool and every image needs one of them, dealt in a seeded spread without repeats
+until every entry has been dealt (`deal_spread`), placed or used without changing the act (`PLACED_RULE`); the pack
+is then no list for the writer to pick more from. Clothing (`v2/scenes/clothing.py`) works the same way with a
+selected Clothing pack, outside adult sets and scene ideas: a garment in Understanding's kept clothing goes to the
+character the request names last before it (`worn`: people of one name by the order they are named, all of them when
+named in the plural, the only character when there is one; nobody when the request does not show whose it is), as the
+selected entries that name it whole, else the request's words; everyone else who can be dressed (a human whose look is
+not a known character's or a trigger's) gets one entry of all the selected packs per image, never the same as another
+person of that image (`deal_outfits`), one throughout when clothing is locked, as `needed` "label: entry" with
+`WORN_RULE`; an entry is one garment and the writer completes the rest. The selected Clothing packs are dealt as
+suggestions first, so every random call stays where it was, and then dropped from them. Without a Clothing pack, or in
+an adult set (whose selected packs stay suggestions), nothing is dealt. Every scene names the entry it is built on (`entry`); code checks the entry is one of the fitting ones and that no
 entry is used by more than two images (`ENTRY_CAP`, raised to the images-per-entry when fewer entries fit than images
 are requested), and asks again otherwise. Every other selected category deals each image `HAND` (1) suggested
 entries from a seeded deck, without repeats until the whole category has been dealt (`deal_hands`), so the

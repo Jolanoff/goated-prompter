@@ -47,7 +47,8 @@ def new_way(case, poses, objects, total, seed, embeddings):
     dealt = actions.deal_actions(found, total, rng) if found else {}
     partners = {n: " ".join(filter(None, (dealt.get(n), case.get("place")))) for n in range(1, total + 1)}
     partners = {n: text for n, text in partners.items() if text}
-    things = props.deal_props(objects, total, rng, partners, embeddings)
+    # A selected pack is dealt into every image, in a seeded spread (scenes/policies.py), whatever the pose.
+    things = deal_spread([{"name": props.OBJECTS, "entries": [e for g in objects for e in g["entries"]]}], total, rng)
     return dealt, things, partners
 
 

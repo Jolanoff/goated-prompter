@@ -64,7 +64,8 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
                   for number in todo]
         errors = sorted({f"image {number}: {reason}" for number in todo for reason in reasons[number]})
         prompt = compose_instruction(brief, images, earlier + [_summary(scenes[n]) for n in sorted(scenes)], errors,
-                                     plan["vocabulary"], cap if entries else None, used if entries else None)
+                                     plan["vocabulary"], cap if entries else None, used if entries else None,
+                                     bool(plan.get("placed")))
         checkpoint()
         before = recovery.attempts
         try:

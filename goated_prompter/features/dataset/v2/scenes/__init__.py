@@ -26,12 +26,12 @@ relation, never the inside of an anchor they are outside of, and every image car
 request's words for the writer to keep (ARRANGEMENT_RULE).
 
 Objects & Props (props.py): the things the request keeps (Understanding's kept objects, never any other word of the
-request) are needed in every image, in the vocabulary's words ("needed"); otherwise every image is suggested one
-optional object from the groups that suit its own dealt pose (or the request's act) and place (none when nothing
-does). A needed thing is shown as the request uses it; an optional one only on a body part or support the act leaves
-free, or in the space. Every image's pose, place, object and people (looks.py) are dealt together, so they make one scene.
-Without a selected Objects & Props pack, the built-in packs only give the things the request names (its kept objects
-and its acts) as needed in every image, never an optional one.
+request) are needed in every image, in the vocabulary's words ("needed"); otherwise a selected pack is the user's
+instruction to use it: every image needs one object of all the selected packs, dealt across the set, placed or used
+without changing the act (PLACED_RULE). Without a selected Objects & Props pack, the built-in packs only give the
+things the request names (its kept objects and its acts) as needed in every image. Clothing (clothing.py): with a
+selected Clothing pack, every person who can be dressed wears the garments the request gives them, else one entry of
+the selected packs per image, outside adult sets; the writer completes the rest of the clothing.
 
 Cameras (camera.py): every image is dealt one whole camera (shot, angle and view) that suits its dealt pose, the image
 shape and what the request asks to show, keeping the request's own camera words; a known character's frame is the

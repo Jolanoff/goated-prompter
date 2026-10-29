@@ -15,12 +15,15 @@ from ..assignments import dataset_assignments
 from ..consistency import kept_words, levels, parts_at
 from ..triggers import brief_triggers, owner, run_style
 
+from .clothing import CLOTHING
+from .props import OBJECTS
 from .entries import entry_cap
 from .settings import (ADULT_SUBJECT_FIELDS, FACES, FIELDS, KNOWN_SUBJECT_FIELDS, MAX_FIELD, NONHUMAN_SUBJECT_FIELDS,
                        SHOWS, SUBJECT_FIELDS)
 from .texts import (ARRANGEMENT_RULE, ASPECT_RULE, CAMERA_RULE, COMPOSE_SYSTEM, CONSISTENCY_RULE, DEALT_FRAME_RULE,
                     COMPOSED_RULE, DETAILS_RULE, ENTRY_RULE, FRAME_RULE, GUIDED_RULE, LABELS_RULE, LOOK_RULE, NO_COLOR_RULE,
-                    NEEDED_RULES, NO_PEOPLE_RULE, NSFW_RULE, PLACE_RULE, SFW_RULE, VOCABULARY_RULES)
+                    NEEDED_RULES, NO_PEOPLE_RULE, NSFW_RULE, PLACE_RULE, PLACED_RULE, SFW_RULE, VOCABULARY_RULES,
+                    WORN_RULE)
 
 # Where an earlier image's summary (checks._summary) holds each part: a locked part's first version is copied from it,
 # and already_used never lists a locked part as something to avoid.
@@ -103,7 +106,7 @@ def director_emphasis(brief):
 
 
 def _system(brief, errors, vocabulary="", entry_cap=None, places=False, looks=False, details=False, cameras=False,
-            frames=False, arranged=False, composed=False, needed=False):
+            frames=False, arranged=False, composed=False, needed=False, worn=False, placed=False):
     content = NSFW_RULE if brief["path"] == "nsfw_character" else SFW_RULE
     if not brief["characters"]:
         content += "\n" + NO_PEOPLE_RULE
@@ -114,6 +117,10 @@ def _system(brief, errors, vocabulary="", entry_cap=None, places=False, looks=Fa
         system += "\n\n" + VOCABULARY_RULES
     elif needed:  # things the built-in packs name, without a selected pack
         system += "\n\n" + NEEDED_RULES
+    if worn:  # a garment worn by one person
+        system += "\n" + WORN_RULE
+    if placed:  # an object from the user's selected packs
+        system += "\n" + PLACED_RULE
     if entry_cap:
         system += "\n\n" + (COMPOSED_RULE if composed else ENTRY_RULE).format(cap=entry_cap)
     if places:
@@ -188,9 +195,11 @@ def compose_message(brief, images, earlier=(), vocabulary="", entries_used=None)
     return "\n\n".join(parts)
 
 
-def compose_instruction(brief, images, earlier=(), errors=(), vocabulary="", entry_cap=None, entries_used=None):
+def compose_instruction(brief, images, earlier=(), errors=(), vocabulary="", entry_cap=None, entries_used=None,
+                        placed=False):
     """One composition request. images: [{"image": n, "input"?: guided text}]; vocabulary:
-    the SELECTED VOCABULARY section ("" for none); entry_cap: set when scenes name their Actions & Poses entry."""
+    the SELECTED VOCABULARY section ("" for none); entry_cap: set when scenes name their Actions & Poses entry;
+    placed: the images need objects of the user's selected packs that the request does not name."""
     labels = _labels(brief)
     text = {"type": "string", "maxLength": MAX_FIELD}
 
@@ -221,7 +230,9 @@ def compose_instruction(brief, images, earlier=(), errors=(), vocabulary="", ent
                                                     any("frame" in image for image in images),
                                                     any("arrangement" in image for image in images),
                                                     any("acts" in image for image in images),
-                                                    any("needed" in image for image in images)),
+                                                    any("needed" in image for image in images),
+                                                    any(CLOTHING in image.get("needed", {}) for image in images),
+                                                    placed and any(OBJECTS in image.get("needed", {}) for image in images)),
                              user_message=compose_message(brief, images, earlier, vocabulary, entries_used),
                              model_family=brief["_family"], diagnostic_stage="dataset_v2:scenes",
                              max_tokens=per_image * count, hard_max_tokens=per_image * count,

@@ -101,6 +101,38 @@ def named_in(entries, words):
     return [entry for entry in entries if name(entry) and name(entry) <= said]
 
 
+PHRASES = re.compile(r"[;,]|\b(?:and|while|with)\b")
+
+
+def named_things(groups, kept="", acts=(), place=""):
+    """[[entries]]: the things the request asks for that the built-in packs (groups) name, each as the entries of one
+    name. A thing is named by its whole name, in any form and order (named_in: "a red lantern" names the lantern; "a
+    small paper kite" names no paper lantern), within one phrase of Understanding's kept words (kept) or of one act
+    (acts: an act names the things it is done with even when the kept objects leave them out, "plays guitar"), so
+    words of two phrases never make a name together. An act's thing the place's own words name too (place) is where
+    the act happens, not a thing in it ("hiking a snowy mountain trail"); the kept words always count. [] when nothing
+    is named: the request's own words stay as they are."""
+    entries = list(dict.fromkeys(entry for group in groups for entry in group["entries"]))
+    placed = {word_stem(word) for word in content_words(place)}
+    name = lambda entry: " ".join(entry.split(": ", 1)[0].casefold().split())
+    found, seen = {}, set()
+    phrases = [(phrase, False) for phrase in PHRASES.split(str(kept or ""))] + [
+        (phrase, True) for act in acts for phrase in PHRASES.split(str(act or ""))]
+    for phrase, in_act in phrases:
+        for entry in named_in(entries, content_words(phrase)):
+            stems = {word_stem(word) for word in content_words(name(entry))}
+            if entry not in seen and not (in_act and stems <= placed):
+                seen.add(entry)
+                found.setdefault(name(entry), []).append(entry)
+    return list(found.values())
+
+
+def deal_named(things, total):
+    """{slot: [entries]}: every named thing in every image, the entries of one name taken in turn (no random call)."""
+    return {number: [entries[(number - 1) % len(entries)] for entries in things]
+            for number in range(1, total + 1)} if things else {}
+
+
 def deal_hands(groups, total, rng, size=HAND, words=frozenset(), owned=frozenset(), own_words=None):
     """{slot: {category: [entries]}}: suggested entries (size, one by default) of every selected category except Actions & Poses (dealt
     on its own) for every image, from a seeded shuffle, without repeats until every entry has been dealt, so the whole
