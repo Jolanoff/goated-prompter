@@ -298,7 +298,10 @@ whose descriptions say who they are for) dresses only the people of that sex, ev
 suggestions and nothing is dealt. Expressions go to every human, known characters included. Lighting is dealt per image
 (`policies._per_image`): one entry of the selected packs in every image, in a seeded spread without repeats until every
 entry has been dealt, one throughout when the light is locked, with `LIGHT_RULE` (one setup, no contradicting second
-light); nothing is dealt when the request says its own light. These categories are dealt as suggestions first, so every
+light); nothing is dealt when the request says its own light. Mood & Tone and Effects & Atmosphere are dealt per image
+the same way: a tone shown through the light, the space and posture, never named, after the request's own tone and
+the Director's style (`MOOD_RULE`; nothing is dealt when the request says its own tone), and a visible effect that
+brings no object, place or person of its own (`EFFECTS_RULE`). These categories are dealt as suggestions first, so every
 random call stays where it was, and then dropped from them. Without a selected pack nothing is dealt and the writer
 chooses. Every scene names the entry it is built on (`entry`); code checks the entry is one of the fitting ones and that no
 entry is used by more than two images (`ENTRY_CAP`, raised to the images-per-entry when fewer entries fit than images

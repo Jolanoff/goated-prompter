@@ -131,6 +131,13 @@ FACE_RULE = """- A needed Expressions entry that starts with a character label (
 # Sent after the needed rules when an image needs an entry of the user's selected Lighting packs (policies._per_image).
 LIGHT_RULE = """- A needed Lighting entry is that image's one lighting setup: show its source, direction and color as it
   describes them, and add no second light that contradicts it."""
+# Sent after the needed rules when an image needs an entry of the user's selected Mood & Tone packs (policies._per_image).
+MOOD_RULE = """- A needed Mood & Tone entry is that image's tone: show it through the light, the space and the people's
+  posture, never by naming it; the request's own tone and the Director's style come first, and it changes no other
+  needed entry."""
+# Sent after the needed rules when an image needs an entry of the user's selected Effects & Atmosphere packs.
+EFFECTS_RULE = """- A needed Effects & Atmosphere entry is a visible effect in that image: show it in the air, the light
+  or on the space's own surfaces, and add no object, place or person only to explain it."""
 
 # Sent after the needed rules when an image needs an object from the user's selected Objects & Props packs that the
 # request does not name (scenes/policies.py).

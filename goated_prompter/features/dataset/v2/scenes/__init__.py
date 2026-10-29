@@ -33,7 +33,8 @@ things the request names (its kept objects and its acts) as needed in every imag
 selected Clothing pack, every person who can be dressed wears the garments the request gives them, else one entry of
 the selected packs per image, outside adult sets; the writer completes the rest of the clothing. A selected
 Expressions pack gives every human their own expression per image the same way, and a selected Lighting pack gives
-every image one lighting setup, unless the request says its own.
+every image one lighting setup, unless the request says its own; selected Mood & Tone and Effects & Atmosphere packs
+give every image one tone (unless the request gives its own) and one visible effect.
 
 Cameras (camera.py): every image is dealt one whole camera (shot, angle and view) that suits its dealt pose, the image
 shape and what the request asks to show, keeping the request's own camera words; a known character's frame is the

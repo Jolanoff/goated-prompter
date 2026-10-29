@@ -84,9 +84,25 @@ class Engine(unittest.TestCase):
         self.assertEqual(outcome["Effects & Atmosphere"], "none")
 
     def test_selected_packs_of_other_categories_are_suggested_to_every_image(self):
-        result, _, outcome = plan(["Mood & Tone/Calm-and-Wonder"])
-        self.assertEqual(outcome["Mood & Tone"], "suggested")
-        self.assertTrue(all("Mood & Tone" in hand for hand in result["hands"].values()))
+        result, _, outcome = plan(["Camera & Composition/Camera-Angles"])
+        self.assertEqual(outcome["Camera & Composition"], "suggested")
+        self.assertTrue(all("Camera & Composition" in hand for hand in result["hands"].values()))
+
+    def test_selected_mood_and_effects_packs_give_every_image_one_entry_each(self):
+        packs = ["Mood & Tone/Calm-and-Wonder", "Mood & Tone/Heroic", "Effects & Atmosphere/Weather"]
+        result, groups, outcome = plan(packs)
+        self.assertEqual((outcome["Mood & Tone"], outcome["Effects & Atmosphere"]), ("dealt", "dealt"))
+        for category in ("Mood & Tone", "Effects & Atmosphere"):
+            dealt = [result["needed"][number][category] for number in range(1, 5)]
+            self.assertTrue(all(len(entries) == 1 and entries[0] in self.pool(*packs) for entries in dealt), dealt)
+            self.assertGreater(len({entries[0] for entries in dealt}), 1, "varied across images")
+        self.assertFalse([hand for hand in result["hands"].values() if {"Mood & Tone", "Effects & Atmosphere"} & set(hand)])
+        self.assertFalse(groups, "not a list to pick from")
+        said, _, _ = plan(packs, kept={"mood": "a quiet mood"})
+        self.assertFalse([needed for needed in said["needed"].values() if "Mood & Tone" in needed],
+                         "the request's tone comes first: nothing is dealt over it")
+        self.assertTrue(all("Effects & Atmosphere" in needed for needed in said["needed"].values()),
+                        "a tone is no effect: the effects are still dealt")
 
     def test_a_selected_lighting_pack_gives_every_image_one_lighting_setup(self):
         packs = ["Lighting/Natural", "Lighting/Dramatic"]
@@ -97,6 +113,11 @@ class Engine(unittest.TestCase):
         self.assertGreater(len({entries[0] for entries in dealt}), 1, "varied across images")
         self.assertFalse([hand for hand in result["hands"].values() if "Lighting" in hand], "dealt, not suggested")
         self.assertFalse([group for group in groups if group["category"] == "Lighting"], "not a list to pick from")
+        ten, _, _ = plan(packs, amount=10)
+        dealt = [ten["needed"][number]["Lighting"][0] for number in range(1, 11)]
+        self.assertTrue(all(set(dealt) & self.pool(pack) for pack in packs), "one pool of every selected pack")
+        catalog_order = [entry for pack in CATALOG["packs"] if pack["id"] in packs for entry in pack["entries"]]
+        self.assertNotEqual(dealt, catalog_order[:10], "a seeded deal, not the catalog's order")
         fixed, _, _ = plan(packs, consistency={"light": "locked"})
         self.assertEqual(len({tuple(fixed["needed"][number]["Lighting"]) for number in range(1, 5)}), 1)
         said, _, _ = plan(packs, kept={"light": "candlelight"})

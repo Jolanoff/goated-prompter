@@ -18,15 +18,16 @@ from ..triggers import brief_triggers, owner, run_style
 from .clothing import CLOTHING
 from .props import OBJECTS
 from .entries import entry_cap
-from .settings import (ADULT_SUBJECT_FIELDS, EXPRESSIONS, FACES, FIELDS, KNOWN_SUBJECT_FIELDS, LIGHTING, MAX_FIELD,
-                       NONHUMAN_SUBJECT_FIELDS, SHOWS, SUBJECT_FIELDS)
+from .settings import (ADULT_SUBJECT_FIELDS, EFFECTS, EXPRESSIONS, FACES, FIELDS, KNOWN_SUBJECT_FIELDS, LIGHTING,
+                       MAX_FIELD, MOOD, NONHUMAN_SUBJECT_FIELDS, SHOWS, SUBJECT_FIELDS)
 from .texts import (ARRANGEMENT_RULE, ASPECT_RULE, CAMERA_RULE, COMPOSE_SYSTEM, CONSISTENCY_RULE, DEALT_FRAME_RULE,
-                    COMPOSED_RULE, DETAILS_RULE, ENTRY_RULE, FACE_RULE, FRAME_RULE, GUIDED_RULE, LABELS_RULE, LIGHT_RULE,
-                    LOOK_RULE, NO_COLOR_RULE, NEEDED_RULES, NO_PEOPLE_RULE, NSFW_RULE, PLACE_RULE, PLACED_RULE, SFW_RULE,
-                    VOCABULARY_RULES, WORN_RULE)
+                    COMPOSED_RULE, DETAILS_RULE, EFFECTS_RULE, ENTRY_RULE, FACE_RULE, FRAME_RULE, GUIDED_RULE,
+                    LABELS_RULE, LIGHT_RULE, LOOK_RULE, MOOD_RULE, NO_COLOR_RULE, NEEDED_RULES, NO_PEOPLE_RULE,
+                    NSFW_RULE, PLACE_RULE, PLACED_RULE, SFW_RULE, VOCABULARY_RULES, WORN_RULE)
 
 # How the writer uses what a category's selected packs deal (policies._per_person, _per_image), in this order.
-DEALT_RULES = {CLOTHING: WORN_RULE, EXPRESSIONS: FACE_RULE, LIGHTING: LIGHT_RULE}
+DEALT_RULES = {CLOTHING: WORN_RULE, EXPRESSIONS: FACE_RULE, LIGHTING: LIGHT_RULE, MOOD: MOOD_RULE,
+               EFFECTS: EFFECTS_RULE}
 
 # Where an earlier image's summary (checks._summary) holds each part: a locked part's first version is copied from it,
 # and already_used never lists a locked part as something to avoid.

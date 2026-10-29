@@ -182,7 +182,7 @@ def _deal_cameras(run, cameras):
 
 
 # Selected packs are the user's instruction to use them: a category dealt per person (Clothing, Expressions) or per
-# image (Lighting) needs its entries in every image. The selected packs are first dealt as suggestions as they always
+# image (Lighting, Mood & Tone, Effects & Atmosphere) needs its entries in every image. The selected packs are first dealt as suggestions as they always
 # were (so every random call stays where it was) and then dropped from them (dealt_here).
 def _per_person(category, eligible, packs_for=None, adults=True):
     """(find, deal) for a category dealt to each person: the request's own words for its part go to the person they
@@ -230,22 +230,26 @@ def _per_person(category, eligible, packs_for=None, adults=True):
     return find, deal
 
 
-def _per_image(category):
-    """(find, deal) for a category dealt one entry of its selected packs to every image, in a seeded spread without
-    repeats until all have been dealt, one throughout when its part is locked. The request's own words for the part
-    come first: nothing is dealt over them."""
+def _per_image(category, own_words=True):
+    """(find, deal) for a category dealt one entry of its selected packs to every image, from one seeded pool of all
+    their entries without repeats until all have been dealt, one throughout when its part is locked. With own_words, the request's own words
+    for the part come first: nothing is dealt over them."""
     def find(run, rows):
         if not rows or run["guided"]:
             return []
         run["dealt_here"].add(category)
-        said = str(kept_words(run["brief"]).get(POLICY[category].understanding_fields[0], "") or "").strip()
-        run["scene"][category] = [] if said else offered(rows, category, run["groups"])
+        part = POLICY[category].understanding_fields[0]
+        said = own_words and str(kept_words(run["brief"]).get(part, "") or "").strip()
+        # All the selected packs' entries are one pool (a pack without groups retrieves one group per entry, and a
+        # spread over those would deal them in catalog order).
+        run["scene"][category] = [] if said else list(dict.fromkeys(
+            entry for group in offered(rows, category, run["groups"]) for entry in group["entries"]))
         return []
 
     def deal(run, _):
-        if not (groups := run["scene"].get(category)):
+        if not (pool := run["scene"].get(category)):
             return False
-        dealt = deal_spread(groups, run["total"], run["rng"], locked(category, run))
+        dealt = deal_spread([{"name": category, "entries": pool}], run["total"], run["rng"], locked(category, run))
         for number, entry in dealt.items():
             run["plan"]["needed"].setdefault(number, {})[category] = [entry]
         return bool(dealt)
@@ -259,6 +263,10 @@ _find_clothing, _deal_clothing = _per_person(CLOTHING, dressed, for_sex, adults=
 _find_expressions, _deal_expressions = _per_person(EXPRESSIONS, is_human)
 # Lighting: one lighting setup for the whole image.
 _find_lighting, _deal_lighting = _per_image(LIGHTING)
+# Mood & Tone: one tone per image, unless the request gives its own.
+_find_mood, _deal_mood = _per_image(MOOD)
+# Effects & Atmosphere: one visible effect per image; the request's mood words are no effect, so they hold none back.
+_find_effects, _deal_effects = _per_image(EFFECTS, own_words=False)
 
 
 def _without_own(category):
@@ -297,8 +305,9 @@ POLICIES = (
                      assignment="per_subject", fallback="writer", find=_find_expressions, deal=_deal_expressions),
     VocabularyPolicy(LIGHTING, required_when=lambda run: True, understanding_fields=("light",), selected_packs="dealt",
                      fallback="writer", find=_find_lighting, deal=_deal_lighting),
-    VocabularyPolicy(MOOD, understanding_fields=("mood",)),
-    VocabularyPolicy(EFFECTS, understanding_fields=("mood",)),
+    VocabularyPolicy(MOOD, understanding_fields=("mood",), selected_packs="dealt", find=_find_mood, deal=_deal_mood),
+    VocabularyPolicy(EFFECTS, understanding_fields=("mood",), selected_packs="dealt", find=_find_effects,
+                     deal=_deal_effects),
 )
 POLICY = {policy.category: policy for policy in POLICIES}
 

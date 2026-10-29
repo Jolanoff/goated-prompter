@@ -170,14 +170,17 @@ class SceneVocabulary(unittest.TestCase):
     def test_example_b_only_the_selected_packs_and_their_categories_are_sent(self):
         woman = [{"label": "woman", "gender": "female", "custom": "", "pronoun": "she", "count": 1}]
         self.write(self.brief("A magical woman in a magical world", woman),
-                   ["Spaces/Fantasy", "Effects & Atmosphere/Magic-Effects"])
+                   ["Spaces/Fantasy", "Camera & Composition/Camera-Angles", "Effects & Atmosphere/Magic-Effects"])
         call = self.composer()[0]
         vocabulary = composer_user(call.user_message)["vocabulary"]
         self.assertEqual(vocabulary.count("Core instruction:"), 2)
         self.assertIn("Spaces\nCore instruction:\nSpaces provides vocabulary describing where the action takes place.", vocabulary)
-        self.assertIn("Effects & Atmosphere\nCore instruction:", vocabulary)
+        self.assertIn("Camera & Composition\nCore instruction:", vocabulary)
         self.assertIn("floating castle", vocabulary)
-        self.assertIn("glowing aura", vocabulary)
+        self.assertNotIn("Effects & Atmosphere\n", vocabulary, "dealt to every image instead of listed")
+        magic = next(pack["entries"] for pack in self.catalog["packs"] if pack["id"] == "Effects & Atmosphere/Magic-Effects")
+        self.assertTrue(all(image["needed"]["Effects & Atmosphere"][0] in magic
+                            for image in composer_user(call.user_message)["images"]))
         for unselected in ("Subjects\n", "Clothing\n", "Actions & Poses\n", "foggy graveyard", "athletic woman"):
             self.assertNotIn(unselected, vocabulary)
         system = " ".join(call.system_message.split())
@@ -215,7 +218,7 @@ class SceneVocabulary(unittest.TestCase):
 
     def test_every_batch_gets_the_same_vocabulary_and_the_writer_is_called_once_per_batch(self):
         brief = self.brief("A knight", [{"label": "knight", "gender": "male", "custom": "", "pronoun": "he", "count": 1}], amount=13)
-        self.write(brief, ["Mood & Tone/Romantic"])
+        self.write(brief, ["Camera & Composition/Camera-Angles"])
         calls = self.composer()
         self.assertEqual(len(calls), 2)
         # The same entries in every batch (each batch gets its own seeded order).
@@ -223,21 +226,21 @@ class SceneVocabulary(unittest.TestCase):
         self.assertEqual({call.diagnostic_stage for call in self.calls}, {"dataset_v2:scenes"}, "no extra LLM call")
 
     def test_every_image_gets_its_own_optional_suggestions_so_the_whole_pack_spreads(self):
-        packs = ["Mood & Tone/Romantic", "Objects/Furniture", "Lighting/Dramatic"]
+        packs = ["Camera & Composition/Camera-Angles", "Objects/Furniture", "Lighting/Dramatic"]
         amount = max(len(pack["entries"]) for pack in self.catalog["packs"] if pack["id"] in packs)
         brief = self.brief("A knight", [{"label": "knight", "gender": "male", "custom": "", "pronoun": "he", "count": 1}], amount=amount)
         self.write(brief, packs)
         images = [image for call in self.composer() for image in composer_user(call.user_message)["images"]]
         hands = [image["suggested"] for image in images]
-        self.assertEqual({tuple(sorted(hand)) for hand in hands}, {("Mood & Tone",)})
+        self.assertEqual({tuple(sorted(hand)) for hand in hands}, {("Camera & Composition",)})
         # A selected Objects or Lighting pack is the user's instruction: one of its entries is needed in every image,
         # dealt through the whole pack.
         objects = [image["needed"]["Objects & Props"] for image in images]
         lights = [image["needed"]["Lighting"] for image in images]
-        for category, dealt in (("Mood & Tone", [entry for hand in hands for entry in hand["Mood & Tone"]]),
+        for category, dealt in (("Camera & Composition", [entry for hand in hands for entry in hand["Camera & Composition"]]),
                                 ("Objects & Props", [entry for needed in objects for entry in needed]),
                                 ("Lighting", [entry for needed in lights for entry in needed])):
-            pack = {"Mood & Tone": "Mood & Tone/Romantic", "Objects & Props": "Objects/Furniture",
+            pack = {"Camera & Composition": "Camera & Composition/Camera-Angles", "Objects & Props": "Objects/Furniture",
                     "Lighting": "Lighting/Dramatic"}[category]
             self.assertEqual(set(dealt), set(next(p for p in load_catalog()["packs"] if p["id"] == pack)["entries"]),
                              "every entry is dealt")
@@ -446,12 +449,12 @@ class SceneVocabulary(unittest.TestCase):
     def test_pack_descriptions_reach_the_scene_writer(self):
         catalog = load_catalog(user_root=False)
         for pack in catalog["packs"]:
-            if pack["id"] in ("Actions & Poses/Solo-Activities", "Mood & Tone/Romantic"):
+            if pack["id"] in ("Actions & Poses/Solo-Activities", "Camera & Composition/Camera-Angles"):
                 pack["description"] = f"note for {pack['name']}"
         brief = self.brief("A knight", [{"label": "knight", "gender": "male", "custom": "", "pronoun": "he", "count": 1}], amount=2)
-        self.write(brief, ["Actions & Poses/Solo-Activities", "Mood & Tone/Romantic"], catalog=catalog)
+        self.write(brief, ["Actions & Poses/Solo-Activities", "Camera & Composition/Camera-Angles"], catalog=catalog)
         vocabulary = composer_user(self.composer()[0].user_message)["vocabulary"]
-        self.assertIn('Pack "Romantic" (its author\'s note: note for Romantic):', vocabulary)
+        self.assertIn('Pack "Camera Angles" (its author\'s note: note for Camera Angles):', vocabulary)
         self.assertIn('Pack "Solo Activities" (its author\'s note: note for Solo Activities):', vocabulary)
         self.assertIn("its author's note", self.composer()[0].system_message)
 
@@ -632,11 +635,11 @@ class SceneVocabulary(unittest.TestCase):
                 {"label": "woman", "gender": "female", "custom": "", "pronoun": "she", "count": 1}]
         brief = self.brief("A couple juggling", pair, amount=2)
         brief["kept_words"] = {"action": "juggling"}
-        result = self.write(brief, ["Actions & Poses/Romance", "Mood & Tone/Romantic"])
+        result = self.write(brief, ["Actions & Poses/Romance", "Camera & Composition/Camera-Angles"])
         call = self.composer()[0]
         vocabulary = composer_user(call.user_message)["vocabulary"]
         self.assertNotIn("Actions & Poses", vocabulary, "the request's act is never replaced by an unrelated entry")
-        self.assertIn("Mood & Tone", vocabulary)
+        self.assertIn("Camera & Composition", vocabulary)
         self.assertNotIn("ACTIONS & POSES ENTRY", call.system_message)
         self.assertTrue(result["complete"])
 
